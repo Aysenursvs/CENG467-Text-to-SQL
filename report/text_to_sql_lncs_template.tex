@@ -1,0 +1,622 @@
+% ============================================================
+%  LNCS FORMATINDA TEXT-TO-SQL RAPOR ŞABLONU
+%  CENG 467 - Natural Language Understanding and Generation
+%  Izmir Institute of Technology, Spring 2026
+%
+%  KULLANIM KILAVUZU:
+%  - "[BURAYA ... YAZ]" ile işaretli tüm alanlar doldurulmalıdır.
+%  - "%% AÇIKLAMA:" ile başlayan satırlar yazım rehberidir, silinebilir.
+%  - Overleaf'e yükleyince "llncs.cls" dosyasını da eklemeyi unutma.
+%    İndir: https://www.springer.com/gp/computer-science/lncs/conference-proceedings-guidelines
+% ============================================================
+
+\documentclass[runningheads]{llncs}
+
+% ---- PAKETLER ----
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}       % Türkçe karakter desteği (gerekirse)
+\usepackage{graphicx}             % Şekil eklemek için
+\usepackage{booktabs}             % Profesyonel tablo çizgileri (\toprule, \midrule, \bottomrule)
+\usepackage{multirow}             % Tablolarda satır birleştirme
+\usepackage{amsmath}              % Matematiksel ifadeler
+\usepackage{hyperref}             % Tıklanabilir referanslar (PDF'de)
+\usepackage{url}                  % URL gösterimi için
+\usepackage{listings}             % Kod bloğu gösterimi (SQL örnekleri için)
+\usepackage{xcolor}               % Renk desteği (listings ile)
+
+% ---- KOD BLOĞU STİLİ (SQL örnekleri için) ----
+\lstset{
+  basicstyle=\small\ttfamily,
+  keywordstyle=\color{blue}\bfseries,
+  commentstyle=\color{gray},
+  stringstyle=\color{orange},
+  frame=single,
+  breaklines=true,
+  language=SQL
+}
+
+% ============================================================
+%  BAŞLIK SAYFASI BİLGİLERİ
+% ============================================================
+
+\begin{document}
+
+\title{
+  %% AÇIKLAMA: Başlık kısa, açıklayıcı ve teknik olmalı.
+  %% Örnek: "Instruction-Tuned Sequence-to-Sequence Models for Cross-Domain Text-to-SQL Parsing"
+  %% "Text-to-SQL" ifadesi mutlaka geçsin. Yaklaşık 10-15 kelime ideal.
+  [BURAYA BAŞLIK YAZ: Örn. Schema-Aware Instruction Tuning for Text-to-SQL Semantic Parsing]
+}
+
+%% AÇIKLAMA: \titlerunning makale başlığının kısa hali; sayfa başlığında görünür.
+%% Başlık 40 karakteri geçiyorsa kısalt.
+\titlerunning{[KISA BAŞLIK: Örn. Schema-Aware Text-to-SQL Parsing]}
+
+\author{
+  %% AÇIKLAMA: Her yazar ayrı \inst{} ile kuruma bağlanır.
+  %% İki kişilik grup için: Ad Soyad\inst{1} \and Ad Soyad\inst{1}
+  [Birinci Yazar Adı Soyadı]\inst{1} \and
+  [İkinci Yazar Adı Soyadı]\inst{1}
+}
+
+%% AÇIKLAMA: \authorrunning sayfa üstünde görünen yazar kısaltması.
+%% İki yazar için: "A. Soyadı and B. Soyadı"
+\authorrunning{[Kısaltılmış Yazar: Örn. A. Yılmaz and B. Demir]}
+
+\institute{
+  %% AÇIKLAMA: Bölüm ve üniversite adı. E-posta formatı LNCS standardı.
+  Department of Computer Engineering,
+  Izmir Institute of Technology (IYTE), Izmir, Turkey \\
+  \email{\{[ogrenci1\_eposta], [ogrenci2\_eposta]\}@iyte.edu.tr}
+}
+
+\maketitle
+
+% ============================================================
+%  ABSTRACT (ÖZET)
+%  Hedef uzunluk: 150–250 kelime
+% ============================================================
+
+\begin{abstract}
+%% AÇIKLAMA: Abstract 4 bölümden oluşmalı:
+%%   1) Problem tanımı: "Text-to-SQL parsing... " diye başla, problemi 1-2 cümle tanımla.
+%%   2) Yaklaşım: "We propose / fine-tune / implement..." diye devam et.
+%%   3) Deneyler: Hangi veri setinde, hangi metriklerle değerlendirdin?
+%%   4) Ana sonuç: "Our model achieves X\% execution accuracy on Spider..."
+%%
+%% ÖRNEK TASLAK (bunu doldurup genişlet):
+Text-to-SQL semantic parsing is the task of mapping natural language questions to
+executable SQL queries, enabling non-expert users to query relational databases.
+In this work, we fine-tune [MODEL ADI, örn. Flan-T5-base] with instruction tuning
+on the Spider benchmark dataset and evaluate three schema serialization strategies
+for representing database structure.
+We compare our approach against two baselines: (1) zero-shot prompting of a
+pre-trained language model and (2) [İKİNCİ BASELINE ADI].
+Experimental results show that our proposed method achieves [X]\% execution accuracy
+on the Spider development set, outperforming the zero-shot baseline by [Y] percentage
+points.
+Ablation studies reveal that the choice of schema encoding format significantly
+affects model performance, with [FORMAT ADI] yielding the best results.
+We also provide a qualitative error analysis categorizing failure cases into
+schema linking errors, incorrect JOIN conditions, and aggregation mistakes.
+
+%% AÇIKLAMA: Aşağıdaki keywords satırını doldur.
+\keywords{
+  Text-to-SQL \and
+  Semantic Parsing \and
+  Instruction Tuning \and
+  Schema Encoding \and
+  Spider Benchmark \and
+  Natural Language Interface to Databases
+}
+\end{abstract}
+
+
+% ============================================================
+%  1. GİRİŞ (INTRODUCTION)
+%  Hedef uzunluk: ~0.5-0.7 sayfa / ~300-400 kelime
+% ============================================================
+
+\section{Introduction}
+\label{sec:intro}
+
+%% AÇIKLAMA: Giriş şu sırayı takip etmeli:
+%%   Paragraf 1: Genel motivasyon — neden NL-to-SQL önemli?
+%%   Paragraf 2: Mevcut zorluklar — neden bu problem hala açık?
+%%   Paragraf 3: Bu çalışmada ne yapıldı (contribution'lar)
+%%   Paragraf 4: Makalenin geri kalanının yapısı
+
+Natural language interfaces to databases (NLIDB) allow users to query structured
+data using plain English, eliminating the need for SQL expertise~\cite{[NLIDB_REFERENCE]}.
+Text-to-SQL parsing, which maps natural language questions to executable SQL queries,
+is a central challenge in this domain and has seen significant progress with the
+advent of large pre-trained language models~\cite{[SURVEY_REFERENCE]}.
+
+%% AÇIKLAMA: Mevcut zorlukları tartış. Aşağıdaki cümleler taslaktır, kendi cümlelerinle yaz.
+Despite recent advances, Text-to-SQL remains challenging due to (1) the compositional
+nature of SQL, (2) the need to correctly link question entities to database schema
+elements (schema linking), and (3) the difficulty of generalizing across unseen
+database schemas~\cite{Yu2018Spider}.
+Cross-domain benchmarks such as Spider~\cite{Yu2018Spider} have highlighted
+these challenges by evaluating models on databases not seen during training.
+
+%% AÇIKLAMA: Bu çalışmanın katkısını listele. "We" ile başla.
+In this paper, we make the following contributions:
+\begin{itemize}
+  \item We fine-tune [MODEL ADI] with instruction tuning on the Spider benchmark,
+        incorporating explicit schema encoding to help the model understand
+        database structure.
+  \item We systematically compare three schema serialization formats and analyze
+        their impact on execution accuracy via ablation study.
+  \item We evaluate our approach against two baselines — zero-shot prompting and
+        [BASELINE 2 ADI] — using execution accuracy and exact match metrics.
+  \item We provide a detailed error analysis of failure cases, categorized by
+        error type, along with a discussion of ethical considerations.
+\end{itemize}
+
+%% AÇIKLAMA: Son paragrafta makalenin yapısını açıkla.
+The remainder of this paper is organized as follows.
+Section~\ref{sec:related} reviews related work.
+Section~\ref{sec:method} describes our methodology.
+Section~\ref{sec:setup} presents the experimental setup.
+Section~\ref{sec:results} reports results.
+Section~\ref{sec:error} provides error analysis.
+Section~\ref{sec:discussion} discusses limitations, and
+Section~\ref{sec:conclusion} concludes the paper.
+
+
+% ============================================================
+%  2. İLGİLİ ÇALIŞMALAR (RELATED WORK)
+%  Hedef uzunluk: ~0.8-1 sayfa / ~400-500 kelime
+% ============================================================
+
+\section{Related Work}
+\label{sec:related}
+
+%% AÇIKLAMA: Related Work'u tematik alt başlıklara böl.
+%% Önerilen alt başlıklar: Seq2Seq yaklaşımları, LLM tabanlı yaklaşımlar,
+%% Schema encoding yöntemleri. Her paragraf bir temayı ele alsın.
+%% Her cümle/iddia için mutlaka atıf ver (\cite{...}).
+
+\subsection{Sequence-to-Sequence Approaches}
+%% AÇIKLAMA: T5, BART, mT5 gibi encoder-decoder modellerinin Text-to-SQL'e
+%% uygulanmasını anlat. PICARD ve RAT-SQL burada ele alınabilir.
+
+Early neural approaches to Text-to-SQL adopted sequence-to-sequence architectures
+trained to map question–schema pairs to SQL queries~\cite{[SEQ2SEQ_REF]}.
+[BU PARAGRAFI KENDI ARAŞTIRMAN İLE GENIŞLET — 3-4 cümle, atıflı]
+
+\subsection{Pre-trained Language Models for Text-to-SQL}
+%% AÇIKLAMA: Fine-tuned BERT/T5 tabanlı modeller (BRIDGE, UnifiedSKG, vb.)
+%% ile instruction tuning yaklaşımlarını (DAIL-SQL, C3 vb.) tartış.
+
+The introduction of large pre-trained language models has substantially advanced
+Text-to-SQL performance.
+[BU PARAGRAFI KENDI ARAŞTIRMAN İLE GENIŞLET — 4-5 cümle, atıflı]
+
+\subsection{Schema Encoding and Linking}
+%% AÇIKLAMA: Şema bilgisinin modele nasıl verildiğini ele al.
+%% RAT-SQL, ShadowGNN, LGESQL gibi çalışmalar buraya girer.
+
+Effective schema encoding is critical for cross-domain generalization.
+[BU PARAGRAFI KENDI ARAŞTIRMAN İLE GENIŞLET — 3-4 cümle, atıflı]
+
+%% AÇIKLAMA: Son paragrafta bu çalışmayı önceki çalışmalardan neyin ayırdığını belirt.
+\noindent\textbf{Positioning of This Work.}
+Unlike prior approaches that rely on complex graph-based schema linking,
+we adopt a simpler instruction-tuning framework and systematically compare
+schema serialization strategies, which to our knowledge has not been
+directly studied in the context of [MODEL ADI].
+
+
+% ============================================================
+%  3. METODOLOJİ (METHODOLOGY)
+%  Hedef uzunluk: ~1.2-1.5 sayfa / ~600-750 kelime
+% ============================================================
+
+\section{Methodology}
+\label{sec:method}
+
+%% AÇIKLAMA: Methodology bölümü şu 4 alt başlıktan oluşmalı:
+%%   3.1 Problem Tanımı (formal)
+%%   3.2 Schema Encoding Stratejileri
+%%   3.3 Model Mimarisi ve Fine-Tuning
+%%   3.4 Baseline Modeller
+
+\subsection{Problem Formulation}
+%% AÇIKLAMA: Problemi matematiksel/formal olarak tanımla.
+%% Giriş ve çıkış nedir? x (soru), S (şema), y (SQL) notasyonunu kullan.
+
+Given a natural language question $q$ and a relational database schema
+$\mathcal{S} = \{T_1, T_2, \ldots, T_n\}$ where each table $T_i$ contains
+a set of columns $C_i = \{c_{i,1}, \ldots, c_{i,m}\}$, the goal of Text-to-SQL
+parsing is to generate an executable SQL query $y$ such that executing $y$
+on the target database $\mathcal{D}$ returns the correct answer to $q$:
+
+\begin{equation}
+  y^* = \arg\max_{y} P(y \mid q, \mathcal{S}; \theta)
+  \label{eq:objective}
+\end{equation}
+
+\noindent where $\theta$ denotes the model parameters.
+
+\subsection{Schema Serialization Strategies}
+%% AÇIKLAMA: Şemanın modele nasıl serileştirildiğini anlat.
+%% 3 farklı format dene ve burada tanımla (ablation için de gerekli).
+
+A key challenge in Text-to-SQL is representing the database schema as text
+for input to a language model.
+We investigate three serialization formats:
+
+\noindent\textbf{Format A — Plain text listing:}
+\begin{lstlisting}[language=SQL, caption={Format A: Plain text schema representation}]
+Table: students | Columns: id, name, age, gpa
+Table: courses  | Columns: id, title, credits
+FK: enrollments.student_id -> students.id
+\end{lstlisting}
+
+\noindent\textbf{Format B — CREATE TABLE syntax:}
+\begin{lstlisting}[language=SQL, caption={Format B: CREATE TABLE schema representation}]
+CREATE TABLE students (
+  id INT PRIMARY KEY,
+  name TEXT, age INT, gpa FLOAT
+);
+\end{lstlisting}
+
+\noindent\textbf{Format C — Compact notation:}
+\begin{lstlisting}[language=SQL, caption={Format C: Compact schema representation}]
+students(id[PK], name, age, gpa) |
+courses(id[PK], title, credits)
+\end{lstlisting}
+
+%% AÇIKLAMA: Bu formatları neden seçtiğini bir cümleyle açıkla.
+Format B mimics the input seen during code-oriented pre-training and is expected
+to align best with code-focused models, while Format A prioritizes readability
+and Format C minimizes input token count.
+
+\subsection{Model Architecture and Fine-Tuning}
+%% AÇIKLAMA: Kullandığın modeli (T5/Flan-T5/CodeLlama vb.) açıkla.
+%% Encoder-decoder veya decoder-only olduğunu belirt.
+%% LoRA kullandıysan r, alpha, target_modules değerlerini yaz.
+%% Instruction template'i göster.
+
+We fine-tune \textbf{[MODEL ADI, örn. google/flan-t5-base]}~\cite{[MODEL_CITATION]}
+using the instruction tuning paradigm.
+The model is an encoder-decoder Transformer with [X] parameters,
+pre-trained on a mixture of tasks including code generation and question answering.
+
+Our input instruction template is formatted as follows:
+
+\begin{lstlisting}[language={},caption={Instruction template used for fine-tuning}]
+### Task: Convert the natural language question to SQL.
+### Schema: {serialized_schema}
+### Question: {question}
+### SQL:
+\end{lstlisting}
+
+%% AÇIKLAMA: LoRA/QLoRA kullandıysan aşağıdaki paragrafı doldur; kullanmadıysan sil.
+To reduce memory requirements, we apply Low-Rank Adaptation (LoRA)~\cite{Hu2022LoRA}
+with rank $r=[DEĞER]$, $\alpha=[DEĞER]$, targeting the
+$\{$\texttt{q\_proj}, \texttt{v\_proj}$\}$ attention weight matrices.
+This reduces trainable parameters from [TOPLAM] to [LORA] million.
+
+\subsection{Baseline Methods}
+%% AÇIKLAMA: Her baseline için kısa ama net açıklama yaz.
+
+\noindent\textbf{Baseline 1 — Zero-shot prompting:}
+We evaluate [MODEL, örn. Mistral-7B-Instruct] in a zero-shot setting,
+providing only the schema and question in the prompt without any fine-tuning.
+This establishes the ceiling achievable by prompting alone.
+
+\noindent\textbf{Baseline 2 — [BASELINE ADI]:}
+[BU BASELINE'IN NE YAPTIĞINI 2-3 CÜMLE AÇIKLA.
+Örn. PICARD kullanıyorsan: "PICARD augments a T5 model with a SQL parser
+that constrains beam search at inference time to only produce syntactically
+valid SQL..." atıf ver.]
+
+
+% ============================================================
+%  4. DENEYSEL KURULUM (EXPERIMENTAL SETUP)
+%  Hedef uzunluk: ~0.4-0.5 sayfa / ~200-250 kelime
+% ============================================================
+
+\section{Experimental Setup}
+\label{sec:setup}
+
+\subsection{Datasets}
+%% AÇIKLAMA: Spider ve GeoQuery veri setlerini açıkla.
+%% Tablo sayısı, soru sayısı, train/dev/test bölünmesi gibi istatistikler ekle.
+
+We conduct experiments on the \textbf{Spider}~\cite{Yu2018Spider} benchmark,
+a large-scale cross-domain Text-to-SQL dataset containing [8,659] training
+examples, [1,034] development examples across [200] databases with [138]
+different domains.
+[GeoQuery kullanıyorsanız buraya ekle: We additionally evaluate on
+GeoQuery~\cite{[GEOQUERY_REF]}, a standard semantic parsing benchmark
+with [880] natural language questions over a US geography database.]
+
+\subsection{Evaluation Metrics}
+%% AÇIKLAMA: Kullandığın metrikleri ve nasıl hesaplandığını kısaca açıkla.
+
+We evaluate using two standard metrics:
+(1) \textbf{Execution Accuracy (EX)}: the fraction of predicted SQL queries
+that return the correct answer when executed on the target database; and
+(2) \textbf{Exact Match (EM)}: the fraction of predictions that exactly match
+the gold SQL query after normalization (lowercasing, keyword ordering).
+
+\subsection{Implementation Details}
+%% AÇIKLAMA: Tüm hyperparameter'ları buraya yaz.
+%% Epoch sayısı, learning rate, batch size, optimizer, donanım.
+
+All models are implemented using the HuggingFace Transformers
+library~\cite{Wolf2020Transformers}.
+Fine-tuning is performed for [EPOCH SAYISI] epochs with a batch size of [DEĞER],
+using the AdamW optimizer~\cite{Loshchilov2019AdamW} with a learning rate
+of [ÖRN. 5e-5] and cosine learning rate scheduling.
+Experiments are run on [DONANIM, örn. a single NVIDIA A100 40GB GPU
+/ Google Colab Pro with T4 GPU].
+Maximum input sequence length is set to [512] tokens and output length to [256] tokens.
+
+
+% ============================================================
+%  5. SONUÇLAR (RESULTS)
+%  Hedef uzunluk: ~0.8-1 sayfa / ~400-500 kelime
+% ============================================================
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Main Results}
+%% AÇIKLAMA: Ana sonuçları tablo olarak sun.
+%% Tüm modellerin EX ve EM değerlerini karşılaştır.
+%% Tablonun altında en önemli bulguyu 2-3 cümle yorumla.
+
+Table~\ref{tab:main_results} reports execution accuracy and exact match
+on the Spider development set for all compared methods.
+
+\begin{table}[ht]
+  \centering
+  \caption{
+    Comparison of methods on the Spider development set.
+    %% AÇIKLAMA: Tablo başlığı kısa ve bilgilendirici olmalı.
+    EX = Execution Accuracy (\%), EM = Exact Match (\%).
+    Bold indicates best result.
+  }
+  \label{tab:main_results}
+  \begin{tabular}{lcc}
+    \toprule
+    \textbf{Method} & \textbf{EX (\%)} & \textbf{EM (\%)} \\
+    \midrule
+    Baseline 1: Zero-shot [MODEL]     & [DEĞER] & [DEĞER] \\
+    Baseline 2: [BASELINE ADI]        & [DEĞER] & [DEĞER] \\
+    \midrule
+    Ours: [MODEL] + Format A          & [DEĞER] & [DEĞER] \\
+    Ours: [MODEL] + Format B          & [DEĞER] & [DEĞER] \\
+    Ours: [MODEL] + Format C          & [DEĞER] & [DEĞER] \\
+    \midrule
+    \textbf{Ours (Best)}              & \textbf{[DEĞER]} & \textbf{[DEĞER]} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+%% AÇIKLAMA: Tabloyu yorumla — sadece rakamları tekrar etme, NEDEN böyle olduğunu açıkla.
+Our proposed fine-tuned model with [FORMAT] schema serialization achieves the
+highest execution accuracy of [X]\%, outperforming the zero-shot baseline by
+[Y] percentage points and [BASELINE 2] by [Z] points.
+[İKİ VEYA ÜÇ CÜMLE DAHA — neden bu format daha iyi çalıştı?]
+
+\subsection{Ablation Study: Schema Serialization}
+%% AÇIKLAMA: Üç schema formatının karşılaştırmasını yorum olarak sun.
+%% Tablo zaten yukarıdaki tabloda var; burada sadece analizi yaz.
+
+The ablation results in Table~\ref{tab:main_results} demonstrate that schema
+serialization format has a measurable impact on model performance.
+Format B (CREATE TABLE syntax) yields [AÇIKLAMA].
+Format C (compact notation) reduces input length by [X]\% on average but shows
+[AÇIKLAMA — daha düşük mü, daha yüksek mi performans?].
+[Bu gözlemleri 3-4 cümle detaylandır.]
+
+\subsection{Effect of Training Data Size}
+%% AÇIKLAMA: Bu alt bölüm opsiyonel ama güçlü bir ek bulgu sağlar.
+%% 25\%, 50\%, 75\%, 100\% training data ile performansı karşılaştır.
+%% Yapmazsanız bu alt bölümü silin.
+
+[İSTEĞE BAĞLI: Farklı eğitim veri büyüklüklerinde performans analizi.]
+
+
+% ============================================================
+%  6. HATA ANALİZİ (ERROR ANALYSIS)
+%  Hedef uzunluk: ~0.5 sayfa / ~250-300 kelime
+% ============================================================
+
+\section{Error Analysis}
+\label{sec:error}
+
+%% AÇIKLAMA: En az 15-20 başarısız örneği manuel incele.
+%% Bunları kategorilere ayır ve her kategori için bir örnek ver.
+%% Aşağıdaki tablo bu kategori dağılımını göstermeli.
+
+We manually analyzed [N] prediction errors from the Spider development set
+to identify systematic failure patterns.
+Table~\ref{tab:errors} summarizes the distribution of error categories.
+
+\begin{table}[ht]
+  \centering
+  \caption{Distribution of error categories in [N] failure cases.}
+  \label{tab:errors}
+  \begin{tabular}{lcc}
+    \toprule
+    \textbf{Error Category}        & \textbf{Count} & \textbf{\%} \\
+    \midrule
+    Schema linking (wrong table)   & [DEĞER] & [DEĞER] \\
+    Incorrect JOIN condition       & [DEĞER] & [DEĞER] \\
+    Aggregation error (COUNT/SUM)  & [DEĞER] & [DEĞER] \\
+    Nested query failure           & [DEĞER] & [DEĞER] \\
+    WHERE clause string mismatch   & [DEĞER] & [DEĞER] \\
+    Other                          & [DEĞER] & [DEĞER] \\
+    \midrule
+    Total                          & [N]     & 100.0   \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+%% AÇIKLAMA: Her kategori için kısa açıklama ve gerçek örnek ver.
+\noindent\textbf{Schema linking errors} account for [X]\% of failures.
+These occur when the model selects a plausible but incorrect table.
+For example, given the question \textit{"How many students are enrolled in
+each department?"}, the model queries the \texttt{students} table directly
+rather than joining through \texttt{enrollments}.
+
+\noindent\textbf{Aggregation errors} arise primarily with nested aggregations
+such as \texttt{HAVING COUNT(*) > 1} and \texttt{AVG} over grouped results.
+[BU KATEGORI İÇİN BİR ÖRNEK EKLE]
+
+%% AÇIKLAMA: Diğer kategorileri de aynı şekilde 2-3 cümle ile ele al.
+[DİĞER KATEGORİLERİ BENZER ŞEKİLDE AÇIKLA]
+
+
+% ============================================================
+%  7. TARTIŞMA (DISCUSSION)
+%  Hedef uzunluk: ~0.4-0.5 sayfa / ~200-250 kelime
+% ============================================================
+
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{Limitations}
+%% AÇIKLAMA: Çalışmanın kısıtlarını dürüstçe açıkla.
+%% Hesaplama kaynakları, veri kapsamı, dil kısıtlamaları vb.
+
+Our study has several limitations.
+First, due to computational constraints, we fine-tuned only the
+[MODEL, örn. base (250M parameter)] variant; larger models may yield
+substantially better results.
+Second, our evaluation is limited to the Spider benchmark;
+performance on domain-specific databases (e.g., medical, legal) may differ.
+[BAŞKA KISITLAMALARI EKLE — 2-3 cümle]
+
+\subsection{Ethical Considerations}
+%% AÇIKLAMA: Bu alt bölüm rubrikte 5 puan. Mutlaka doldurulmalı.
+%% Hallucination riski, SQL injection, bias konularını tartış.
+
+Deploying Text-to-SQL systems in production introduces several risks.
+
+\noindent\textbf{Hallucination:} The model may generate syntactically valid
+SQL that queries non-existent columns or tables, silently returning incorrect
+results. Users without SQL expertise cannot detect such errors.
+
+\noindent\textbf{SQL Injection Risk:} While the model operates on trusted schema
+inputs in our setting, integrating user-provided free-text into SQL generation
+pipelines could introduce injection vulnerabilities if outputs are not sanitized.
+
+\noindent\textbf{Domain Bias:} Spider's training data skews toward English and
+standard business domains (universities, music, sports). Models trained on Spider
+may perform poorly on multilingual queries or specialized domains such as
+healthcare or legal databases, raising fairness concerns for non-English-speaking
+or domain-specific users.
+
+
+% ============================================================
+%  8. SONUÇ (CONCLUSION)
+%  Hedef uzunluk: ~0.3 sayfa / ~150 kelime
+% ============================================================
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+%% AÇIKLAMA: Conclusion 3 paragraftan oluşmalı:
+%%   1) Ne yaptık (1-2 cümle özet)
+%%   2) Ana bulgular (3-4 cümle)
+%%   3) Gelecek çalışma yönleri (2-3 cümle)
+
+In this paper, we presented a Text-to-SQL semantic parsing system based on
+instruction-tuned [MODEL ADI] with systematic comparison of schema serialization strategies.
+
+Our experiments on the Spider benchmark demonstrate that fine-tuning with
+structured schema encoding significantly outperforms zero-shot prompting,
+achieving [X]\% execution accuracy on the development set.
+Among the three serialization formats tested, [FORMAT B] yields the best performance,
+suggesting that [AÇIKLAMA].
+Error analysis reveals that schema linking and nested query generation remain the
+primary bottlenecks.
+
+Future work could explore (1) graph-based schema linking modules,
+(2) retrieval-augmented generation to provide few-shot SQL examples at inference,
+and (3) extending evaluation to low-resource languages to address the bias
+limitations identified in this study.
+
+% ============================================================
+%  KAYNAKÇA (REFERENCES)
+%  AÇIKLAMA: Tüm atıflar burada tanımlanmalı.
+%  Springer LNCS splncs04.bst bib stilini kullanır.
+%  Overleaf'te bibliography stilini "splncs04" yap.
+%
+%  TEMEL KAYNAKLAR (bunları Google Scholar'dan BibTeX olarak indir):
+%   - Spider: Yu et al. 2018 (EMNLP)
+%   - Flan-T5: Chung et al. 2022
+%   - LoRA: Hu et al. 2022 (ICLR)
+%   - PICARD: Scholak et al. 2021 (EMNLP)
+%   - HuggingFace: Wolf et al. 2020
+%   - AdamW: Loshchilov & Hutter 2019 (ICLR)
+%   - RAT-SQL: Wang et al. 2020 (ACL)
+%   - UnifiedSKG: Xie et al. 2022
+%   - DAIL-SQL: Gao et al. 2023
+% ============================================================
+
+\bibliographystyle{splncs04}
+\bibliography{references}
+
+%% AÇIKLAMA: Ayrı bir "references.bib" dosyası oluştur ve tüm BibTeX girişlerini oraya koy.
+%% Örnek BibTeX girişi:
+%%
+%% @inproceedings{Yu2018Spider,
+%%   title     = {Spider: A Large-Scale Human-Labeled Dataset for Complex and
+%%                Cross-Domain Semantic Parsing and Text-to-SQL Task},
+%%   author    = {Yu, Tao and Zhang, Rui and Yang, Kai and Yasunaga, Michihiro
+%%                and Wang, Dongxu and Li, Zifan and Ma, James and Li, Irene
+%%                and Yao, Qingning and Roman, Shanelle and Zhang, Zilin
+%%                and Radev, Dragomir},
+%%   booktitle = {Proceedings of the 2018 Conference on Empirical Methods
+%%                in Natural Language Processing},
+%%   pages     = {3911--3921},
+%%   year      = {2018}
+%% }
+%%
+%% @inproceedings{Hu2022LoRA,
+%%   title     = {LoRA: Low-Rank Adaptation of Large Language Models},
+%%   author    = {Hu, Edward J and Shen, Yelong and Wallis, Phillip and
+%%                Allen-Zhu, Zeyuan and Li, Yuanzhi and Wang, Shean and
+%%                Wang, Lu and Chen, Weizhu},
+%%   booktitle = {International Conference on Learning Representations},
+%%   year      = {2022}
+%% }
+%%
+%% @inproceedings{Wolf2020Transformers,
+%%   title     = {Transformers: State-of-the-Art Natural Language Processing},
+%%   author    = {Wolf, Thomas and Debut, Lysandre and Sanh, Victor and others},
+%%   booktitle = {Proceedings of the 2020 Conference on Empirical Methods
+%%                in Natural Language Processing: System Demonstrations},
+%%   pages     = {38--45},
+%%   year      = {2020}
+%% }
+
+\end{document}
+
+% ============================================================
+%  OVERLEAF'TE KULLANIM ADIM ADIM:
+%
+%  1. Overleaf.com → New Project → Blank Project
+%  2. main.tex dosyasını bu içerikle değiştir
+%  3. Springer'dan llncs.cls ve splncs04.bst dosyalarını indir:
+%       https://www.springer.com/gp/computer-science/lncs/conference-proceedings-guidelines
+%     ve Overleaf projesine yükle
+%  4. Yeni bir "references.bib" dosyası oluştur, BibTeX girişlerini ekle
+%  5. Compiler olarak "pdfLaTeX" seç
+%  6. [BURAYA ... YAZ] ile işaretli tüm alanları doldur
+%  7. Yeşil "Recompile" butonuna bas
+%
+%  HATA ALIRSAN:
+%  - "File not found: llncs.cls" → llncs.cls dosyasını yüklemeyi unutmuşsun
+%  - "Bibliography not found" → references.bib dosyasını oluştur
+%  - "Undefined control sequence" → paket eksik olabilir, \usepackage{...} kontrol et
+% ============================================================
