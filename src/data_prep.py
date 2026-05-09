@@ -1,110 +1,163 @@
+"""
+data_prep.py — Spider verisetini indirme, inceleme ve ön işleme scripti.
+
+Bu script:
+  1. Spider verisetini Hugging Face'den indirir
+  2. Verisetinin yapısını ve boyutlarını ekrana basar
+  3. Şema bilgisini otomatik olarak çıkarır
+  4. 3 farklı şema serileştirme formatını gösterir
+  5. Zero-shot ve few-shot prompt örnekleri oluşturur
+  6. Gemini API bağlantısını test eder
+"""
+
 import os
+import sys
+import json
 
 from datasets import load_dataset
 
-# 1. Spider verisetini Hugging Face üzerinden indiriyoruz
-print("Spider veriseti indiriliyor/yükleniyor...")
-dataset = load_dataset("spider")
-
-# 2. Verisetinin bölümlerini (train/validation) ve boyutlarını yazdırıyoruz
-print("\n--- VERİSETİ BOYUTLARI ---")
-print(f"Eğitim (Train) seti örnek sayısı: {len(dataset['train'])}")
-print(f"Doğrulama (Validation) seti örnek sayısı: {len(dataset['validation'])}")
-
-
-# 3. Verisetinden ilk örneği çekip yapısını inceliyoruz
-sample = dataset["train"][0]
-
-print("\n--- İLK ÖRNEK İNCELEMESİ ---")
-print("Veritabanı Adı (db_id):", sample["db_id"])
-print("Doğal Dil Sorusu (question):", sample["question"])
-print("Hedef SQL Sorgusu (query):", sample["query"])
-
-# 4. Girdi formatının tam özelliklerini (features) görmek için
-print("\n--- VERİ FORMATI (FEATURES) ---")
-for key in sample.keys():
-    print(f"- {key}: {type(sample[key])}")
-
-# 5. Zero-Shot Prompt Taslağı Oluşturma (Baseline 1 için)
-def create_zero_shot_prompt(question, db_id, schema_info=""):
-    """
-    Doğal dil sorusunu ve veritabanı şemasını alıp model için prompt oluşturur.
-    """
-    prompt = f"""You are an expert SQL developer. Your task is to translate the given natural language question into a valid executable SQL query.
-
-Database Name: {db_id}
-Database Schema: 
-{schema_info}
-
-Question: {question}
-SQL Query:"""
-    return prompt
-
-# İlk örneğimiz için örnek bir şema bilgisi (Şimdilik manuel yazıyoruz, ileride otomatize edeceğiz)
-# Gerçek projede Spider verisetindeki 'tables.json' dosyasından bu bilgiyi çekeceğiz.
-sample_schema = "- table: department, columns: [Department_ID, Name, Creation, Ranking, Budget_in_Billions, Num_Employees]\n- table: head, columns: [head_ID, name, born_state, age]"
-
-# Promptu oluşturup ekrana basalım
-baseline_prompt = create_zero_shot_prompt(sample["question"], sample["db_id"], sample_schema)
-
-print("\n--- BASELINE 1: ZERO-SHOT PROMPT TASLAĞI ---")
-print(baseline_prompt)
-
-from groq import Groq
-
-client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-
-response = client.chat.completions.create(
-    model="llama3-70b-8192",
-    messages=[{"role": "user", "content": "Merhaba"}],
+# src/ klasöründeki utils modülünü import et
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from utils import (
+    extract_schema_from_sample,
+    build_schema_cache,
+    serialize_schema_format_a,
+    serialize_schema_format_b,
+    serialize_schema_format_c,
+    create_zero_shot_prompt,
+    create_few_shot_prompt,
+    get_gemini_model,
+    get_sql_prediction,
+    calculate_exact_match,
+    DEFAULT_FEW_SHOT_EXAMPLES,
 )
 
-print(response.choices[0].message.content)
 
-def get_sql_prediction_api(prompt):
-    try:
-        # temperature=0 vermek çok önemli! SQL gibi kesin mantık gerektiren 
-        # görevlerde modelin halüsinasyon yapmasını (rastgelelik) engelleriz.
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo", # Veya elinizde varsa gpt-4o-mini
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.0
-        )
-        # Sadece SQL sorgusunu alıp sağdaki soldaki boşlukları temizliyoruz
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"API Hatası: {e}"
+def main():
+    # ─── 1. Spider verisetini indir ──────────────────────────────────────────
+    print("=" * 60)
+    print("ADIM 1: Spider Veriseti İndiriliyor / Yükleniyor...")
+    print("=" * 60)
+    dataset = load_dataset("xlangai/spider")
 
-# 7. Exact Match (Birebir Eşleşme) Skoru Hesaplama Fonksiyonu
-def calculate_exact_match(prediction, target):
-    # Basit bir temizleme (boşlukları ve büyük/küçük harfleri eşitleme)
-    pred_clean = prediction.strip().lower().replace(";", "")
-    target_clean = target.strip().lower().replace(";", "")
-    return 1 if pred_clean == target_clean else 0
+    # ─── 2. Verisetinin boyutları ────────────────────────────────────────────
+    print("\n--- VERİSETİ BOYUTLARI ---")
+    print(f"  Eğitim (Train) seti   : {len(dataset['train'])} örnek")
+    print(f"  Doğrulama (Validation): {len(dataset['validation'])} örnek")
 
-# Test için ilk 5 örneği çalıştıralım
-print("\n--- LLM API İLE İLK 5 ÖRNEK İÇİN TEST BAŞLIYOR ---")
-total_em = 0
-num_samples = 5
+    # ─── 3. İlk örneği incele ────────────────────────────────────────────────
+    sample = dataset["train"][0]
 
-for i in range(num_samples):
-    sample = dataset["train"][i]
-    # Şimdilik şema kısmını boş geçiyoruz
-    prompt = create_zero_shot_prompt(sample["question"], sample["db_id"], schema_info="") 
-    
-    prediction = get_sql_prediction_api(prompt)
+    print("\n--- İLK ÖRNEK İNCELEMESİ ---")
+    print(f"  Veritabanı Adı (db_id) : {sample['db_id']}")
+    print(f"  Doğal Dil Sorusu       : {sample['question']}")
+    print(f"  Hedef SQL Sorgusu      : {sample['query']}")
+
+    print("\n--- VERİ FORMATI (FEATURES) ---")
+    for key in sample.keys():
+        val = sample[key]
+        val_type = type(val).__name__
+        if isinstance(val, list):
+            val_type = f"list (len={len(val)})"
+        print(f"  - {key}: {val_type}")
+
+    # ─── 4. Otomatik şema çıkarma ───────────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("ADIM 2: Otomatik Şema Çıkarma (Schema Extraction)")
+    print("=" * 60)
+
+    # Tüm veri setinden şema cache'i oluştur
+    print("  Schema cache oluşturuluyor (tüm SQL sorguları parse ediliyor)...")
+    build_schema_cache(dataset)
+    schema_info = extract_schema_from_sample(sample, dataset)
+
+    print(f"\n  Veritabanı: {schema_info['db_id']}")
+    print(f"  Tablo sayısı: {len(schema_info['tables'])}")
+    for table in schema_info["tables"]:
+        print(f"    - {table['name']}: {table['columns']}")
+    print(f"  Primary Keys: {schema_info['primary_keys']}")
+    print(f"  Foreign Keys: {schema_info['foreign_keys']}")
+
+    # ─── 5. 3 farklı şema serileştirme formatı ──────────────────────────────
+    print("\n" + "=" * 60)
+    print("ADIM 3: Şema Serileştirme Formatları")
+    print("=" * 60)
+
+    print("\n--- FORMAT A (Plain Text Listing) ---")
+    schema_a = serialize_schema_format_a(schema_info)
+    print(schema_a)
+
+    print("\n--- FORMAT B (CREATE TABLE Syntax) ---")
+    schema_b = serialize_schema_format_b(schema_info)
+    print(schema_b)
+
+    print("\n--- FORMAT C (Compact Notation) ---")
+    schema_c = serialize_schema_format_c(schema_info)
+    print(schema_c)
+
+    # ─── 6. Prompt örnekleri ─────────────────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("ADIM 4: Prompt Örnekleri")
+    print("=" * 60)
+
+    question = sample["question"]
+    db_id = sample["db_id"]
+
+    print("\n--- ZERO-SHOT PROMPT (Baseline 1) ---")
+    zs_prompt = create_zero_shot_prompt(question, db_id, schema_a)
+    print(zs_prompt)
+
+    print("\n--- FEW-SHOT PROMPT (Baseline 2) ---")
+    fs_prompt = create_few_shot_prompt(
+        question, db_id, schema_a, DEFAULT_FEW_SHOT_EXAMPLES
+    )
+    print(fs_prompt[:500] + "...\n(kısaltıldı)")
+
+    # ─── 7. Gemini API testi ─────────────────────────────────────────────────
+    print("\n" + "=" * 60)
+    print("ADIM 5: Gemini API Bağlantı Testi")
+    print("=" * 60)
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        print("  [UYARI] GEMINI_API_KEY bulunamadı! .env dosyanı kontrol et.")
+        print("  API testini atlıyorum...")
+        return dataset
+
+    model = get_gemini_model("gemini-1.5-flash")
+
+    # Basit test
+    print("\n  Gemini API'ye test sorgusu gönderiliyor...")
+    test_prompt = create_zero_shot_prompt(question, db_id, schema_a)
+    prediction = get_sql_prediction(model, test_prompt)
     target_sql = sample["query"]
-    
-    em_score = calculate_exact_match(prediction, target_sql)
-    total_em += em_score
-    
-    print(f"\nSoru {i+1}: {sample['question']}")
-    print(f"Hedef SQL: {target_sql}")
-    print(f"Modelin Çıktısı:\n{prediction}")
-    print(f"Eşleşme: {'BAŞARILI' if em_score == 1 else 'BAŞARISIZ'}")
+    em = calculate_exact_match(prediction, target_sql)
 
-accuracy = (total_em / num_samples) * 100
-print(f"\n--- SONUÇ ---")
-print(f"Zero-Shot LLM Baseline Exact Match Skoru (İlk 5 örnek): %{accuracy}")
+    print(f"\n  Soru     : {question}")
+    print(f"  Hedef SQL: {target_sql}")
+    print(f"  Model SQL: {prediction}")
+    print(f"  Exact Match: {'✅ BAŞARILI' if em == 1 else '❌ BAŞARISIZ'}")
+
+    # ─── 8. Veri seti istatistiklerini kaydet ────────────────────────────────
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    os.makedirs(data_dir, exist_ok=True)
+
+    stats = {
+        "dataset_name": "Spider (xlangai/spider)",
+        "train_size": len(dataset["train"]),
+        "validation_size": len(dataset["validation"]),
+        "sample_fields": list(sample.keys()),
+        "unique_databases_train": len(set(s["db_id"] for s in dataset["train"])),
+        "unique_databases_val": len(set(s["db_id"] for s in dataset["validation"])),
+    }
+
+    stats_path = os.path.join(data_dir, "dataset_stats.json")
+    with open(stats_path, "w", encoding="utf-8") as f:
+        json.dump(stats, f, indent=2, ensure_ascii=False)
+    print(f"\n  Veri seti istatistikleri kaydedildi: {stats_path}")
+
+    return dataset
+
+
+if __name__ == "__main__":
+    main()
