@@ -7,7 +7,7 @@ Bu script:
   3. Şema bilgisini otomatik olarak çıkarır
   4. 3 farklı şema serileştirme formatını gösterir
   5. Zero-shot ve few-shot prompt örnekleri oluşturur
-  6. Gemini API bağlantısını test eder
+    6. OpenRouter API bağlantısını test eder
 """
 
 import os
@@ -26,7 +26,7 @@ from utils import (
     serialize_schema_format_c,
     create_zero_shot_prompt,
     create_few_shot_prompt,
-    get_gemini_model,
+    get_openrouter_client,
     get_sql_prediction,
     calculate_exact_match,
     DEFAULT_FEW_SHOT_EXAMPLES,
@@ -113,23 +113,23 @@ def main():
     )
     print(fs_prompt[:500] + "...\n(kısaltıldı)")
 
-    # ─── 7. Gemini API testi ─────────────────────────────────────────────────
+    # ─── 7. OpenRouter API testi ─────────────────────────────────────────────
     print("\n" + "=" * 60)
-    print("ADIM 5: Gemini API Bağlantı Testi")
+    print("ADIM 5: OpenRouter API Bağlantı Testi")
     print("=" * 60)
 
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
-        print("  [UYARI] GEMINI_API_KEY bulunamadı! .env dosyanı kontrol et.")
+        print("  [UYARI] OPENROUTER_API_KEY bulunamadı! .env dosyanı kontrol et.")
         print("  API testini atlıyorum...")
         return dataset
 
-    model = get_gemini_model("gemini-2.0-flash")
+    client = get_openrouter_client()
 
     # Basit test
-    print("\n  Gemini API'ye test sorgusu gönderiliyor...")
+    print("\n  OpenRouter API'ye test sorgusu gönderiliyor...")
     test_prompt = create_zero_shot_prompt(question, db_id, schema_a)
-    prediction = get_sql_prediction(model, test_prompt)
+    prediction = get_sql_prediction(client, test_prompt, model_name="inclusionai/ring-2.6-1t:free")
     target_sql = sample["query"]
     em = calculate_exact_match(prediction, target_sql)
 

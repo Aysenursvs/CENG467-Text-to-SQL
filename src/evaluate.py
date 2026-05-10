@@ -2,7 +2,7 @@
 evaluate.py — Baseline evaluation pipeline for Text-to-SQL.
 
 This script evaluates two baseline prompting strategies on the Spider
-validation set using the Gemini API:
+validation set using the OpenRouter API:
   - Baseline 1: Zero-shot prompting
   - Baseline 2: Few-shot prompting (3-shot)
 
@@ -28,7 +28,7 @@ from utils import (
     SCHEMA_SERIALIZERS,
     create_zero_shot_prompt,
     create_few_shot_prompt,
-    get_gemini_model,
+    get_openrouter_client,
     get_sql_prediction,
     calculate_exact_match,
     get_few_shot_examples_from_dataset,
@@ -39,7 +39,8 @@ from utils import (
 
 def evaluate_baseline(
     dataset,
-    model,
+    client,
+    model_name,
     baseline_type,
     schema_format,
     num_samples,
@@ -50,7 +51,8 @@ def evaluate_baseline(
 
     Args:
         dataset: HuggingFace dataset nesnesi
-        model: Gemini model nesnesi
+        client: OpenRouter istemci nesnesi
+        model_name (str): OpenRouter model adı
         baseline_type (str): "zero_shot" veya "few_shot"
         schema_format (str): "format_a", "format_b", "format_c"
         num_samples (int): Değerlendirilecek örnek sayısı
@@ -95,7 +97,7 @@ def evaluate_baseline(
             raise ValueError(f"Unknown baseline type: {baseline_type}")
 
         # Model çıktısını al
-        prediction = get_sql_prediction(model, prompt)
+        prediction = get_sql_prediction(client, prompt, model_name=model_name)
 
         # Exact match hesapla
         em = calculate_exact_match(prediction, target_sql)
@@ -133,7 +135,7 @@ def evaluate_baseline(
     return {
         "baseline_type": baseline_type,
         "schema_format": schema_format,
-        "model_name": "gemini-1.5-flash",
+        "model_name": model_name,
         "num_samples": total,
         "correct": correct,
         "em_score": em_score,
@@ -156,9 +158,9 @@ def run_full_evaluation(args):
     dataset = load_dataset("xlangai/spider")
     print(f"  Train: {len(dataset['train'])} | Validation: {len(dataset['validation'])}")
 
-    # Gemini modelini yükle
-    print(f"\nGemini model yükleniyor: {args.model}...")
-    model = get_gemini_model(args.model)
+    # OpenRouter istemcisini hazırla
+    print(f"\nOpenRouter model ayarlandı: {args.model}...")
+    client = get_openrouter_client()
 
     # Sonuçlar
     all_results = {}
@@ -170,7 +172,7 @@ def run_full_evaluation(args):
     print("#" * 60)
 
     zs_results = evaluate_baseline(
-        dataset, model, "zero_shot", args.schema_format,
+        dataset, client, args.model, "zero_shot", args.schema_format,
         args.num_samples, args.delay
     )
     all_results["zero_shot"] = zs_results
@@ -185,7 +187,7 @@ def run_full_evaluation(args):
     print("#" * 60)
 
     fs_results = evaluate_baseline(
-        dataset, model, "few_shot", args.schema_format,
+        dataset, client, args.model, "few_shot", args.schema_format,
         args.num_samples, args.delay
     )
     all_results["few_shot"] = fs_results
@@ -257,8 +259,8 @@ def main():
         help="Şema serileştirme formatı (default: format_a)"
     )
     parser.add_argument(
-        "--model", type=str, default="gemini-2.0-flash",
-        help="Gemini model adı (default: gemini-2.0-flash)"
+        "--model", type=str, default="inclusionai/ring-2.6-1t:free",
+        help="OpenRouter model adı (default: inclusionai/ring-2.6-1t:free)"
     )
     parser.add_argument(
         "--delay", type=float, default=1.5,

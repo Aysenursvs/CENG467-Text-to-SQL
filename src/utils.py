@@ -6,18 +6,18 @@ Contains:
   - Schema serialization (3 formats: plain text, CREATE TABLE, compact)
   - Zero-shot and few-shot prompt builders
   - SQL normalization and exact match calculation
-  - Gemini API wrapper for LLM inference
+    - OpenRouter API wrapper for LLM inference
 """
 
 import os
 import re
 import time
-import google.generativeai as genai
 from dotenv import load_dotenv
+from openai import OpenAI
 
 # ─── Load environment variables ─────────────────────────────────────────────
 load_dotenv()
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
+
 
 
 # =============================================================================
@@ -430,29 +430,40 @@ def calculate_exact_match(prediction, target):
 
 
 # =============================================================================
-#  5. GEMINI API WRAPPER
+#  5. OPENROUTER API WRAPPER
 # =============================================================================
 
-def get_gemini_model(model_name="gemini-1.5-flash"):
+def get_openrouter_client():
     """
-    Gemini model nesnesi oluşturur.
-
-    Args:
-        model_name (str): Kullanılacak model adı
+    OpenRouter API istemcisi oluşturur.
 
     Returns:
-        genai.GenerativeModel: Model nesnesi
+        OpenAI: OpenRouter uyumlu istemci
     """
-    return genai.GenerativeModel(model_name)
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+    extra_headers = {}
+    http_referer = os.environ.get("OPENROUTER_HTTP_REFERER")
+    app_name = os.environ.get("OPENROUTER_APP_NAME")
+    if http_referer:
+        extra_headers["HTTP-Referer"] = http_referer
+    if app_name:
+        extra_headers["X-Title"] = app_name
+
+    if extra_headers:
+        return OpenAI(api_key=api_key, base_url=base_url, default_headers=extra_headers)
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 
-def get_sql_prediction(model, prompt, max_retries=3, retry_delay=2):
+def get_sql_prediction(client, prompt, model_name="inclusionai/ring-2.6-1t:free", max_retries=3, retry_delay=2):
     """
-    Gemini API ile SQL tahmini alır. Rate limit hatalarında retry yapar.
+    OpenRouter API ile SQL tahmini alır. Rate limit hatalarında retry yapar.
 
     Args:
-        model: Gemini model nesnesi
+        client: OpenRouter uyumlu istemci nesnesi
         prompt (str): LLM'e gönderilecek prompt
+            model_name (str): Kullanılacak OpenRouter model adı (varsayılan: inclusionai/ring-2.6-1t:free)
         max_retries (int): Maksimum deneme sayısı
         retry_delay (int): Denemeler arası bekleme süresi (saniye)
 
@@ -461,14 +472,15 @@ def get_sql_prediction(model, prompt, max_retries=3, retry_delay=2):
     """
     for attempt in range(max_retries):
         try:
-            response = model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.0,
-                    max_output_tokens=256,
-                )
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.0,
+                max_tokens=256,
             )
-            result = response.text.strip()
+            result = response.choices[0].message.content.strip()
             # Markdown code block temizliği
             result = re.sub(r"^```(sql)?\n?", "", result)
             result = re.sub(r"\n?```$", "", result)
