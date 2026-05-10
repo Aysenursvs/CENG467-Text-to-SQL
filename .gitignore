@@ -3,6 +3,7 @@ results/
 __pycache__/
 .ipynb_checkpoints/
 .env
+.venv/
 
 # LaTeX auxiliary files
 *.aux
