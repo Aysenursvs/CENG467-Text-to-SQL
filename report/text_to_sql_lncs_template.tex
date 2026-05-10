@@ -1,435 +1,588 @@
 % ============================================================
-%  CENG 467 — TEXT-TO-SQL SEMANTIC PARSING
-%  MID-PHASE PROGRESS REPORT
+%  CENG 467 — TECHNICAL CHECKPOINT PROGRESS REPORT
+%  Text-to-SQL Semantic Parsing
 %  Izmir Institute of Technology, Spring 2026
+%
+%  TESLİMAT: 14 Mayıs 2026, 23:59 — Microsoft Teams
+%
+%  KULLANIM:
+%  - [BURAYA YAZ] etiketlerini doldurun.
+%  - %%>> ile başlayan satırlar size yönelik talimatlardır — bitince silin.
+%  - Overleaf'te derlemek için llncs.cls gerekmez; article class kullandık.
+%    Düz PDF almak için "pdfLaTeX" ile derleyin.
 % ============================================================
 
-\documentclass[runningheads]{llncs}
+\documentclass[11pt,a4paper]{article}
 
-% ---- PAKETLER ----
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
-\usepackage{graphicx}
+\usepackage[margin=2.5cm]{geometry}
 \usepackage{booktabs}
-\usepackage{multirow}
-\usepackage{amsmath}
 \usepackage{hyperref}
-\usepackage{url}
-\usepackage{listings}
-\usepackage{xcolor}
 \usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{titlesec}
+\usepackage{xcolor}
+\usepackage{listings}
 
-% ---- KOD BLOĞU STİLİ ----
-\lstset{
-  basicstyle=\small\ttfamily,
-  keywordstyle=\color{blue}\bfseries,
-  commentstyle=\color{gray},
-  stringstyle=\color{orange},
-  frame=single,
-  breaklines=true,
-  language=SQL
-}
+\titleformat{\section}{\large\bfseries}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries}{}{0em}{}
 
-% ============================================================
+\lstset{basicstyle=\small\ttfamily, frame=single, breaklines=true}
+
+\hypersetup{colorlinks=true, linkcolor=blue, urlcolor=blue}
+
 \begin{document}
 
-\title{Prompt-Based Text-to-SQL Semantic Parsing\\with Schema Serialization Strategies}
+% ============================================================
+%  BAŞLIK
+% ============================================================
 
-\titlerunning{Prompt-Based Text-to-SQL Parsing}
+\begin{center}
+  {\LARGE\bfseries CENG 467 — Technical Checkpoint Report}\\[0.5em]
+  {\large Natural Language Understanding and Generation}\\[0.3em]
+  {\large İzmir Institute of Technology, Spring 2026}\\[1em]
 
-\author{
-  Ay\c{s}enur Sava\c{s}\inst{1} \and
-  Mustafa [SOYADI]\inst{1}
-}
+  %%>> Aşağıdaki satırları doldurun:
+  {\large\bfseries Project Title:}
+  Schema-Aware Instruction Tuning for Text-to-SQL Semantic Parsing\\[0.3em]
+  %%>> Gerçek isimlerinizi yazın:
+  {\large\bfseries Group Members:}
+  [Ad Soyad 1] \quad [Ad Soyad 2]\\[0.3em]
+  {\large\bfseries Submission Date:} May 14, 2026
+\end{center}
 
-\authorrunning{A.~Sava\c{s} and M.~[Soyad{\i}]}
-
-\institute{
-  Department of Computer Engineering,
-  Izmir Institute of Technology (IYTE), Izmir, Turkey \\
-  \email{\{aysenursavas, mustafa.[soyadi]\}@iyte.edu.tr}
-}
-
-\maketitle
+\vspace{1em}
+\hrule
+\vspace{1.5em}
 
 % ============================================================
-%  1. PROJECT TITLE, GROUP MEMBERS, AND PROBLEM DEFINITION
+%  1. PROJE TANIMI
 % ============================================================
 
 \section{Project Title, Group Members, and Problem Definition}
-\label{sec:problem}
 
-\noindent\textbf{Project Title:} Prompt-Based Text-to-SQL Semantic Parsing with Schema Serialization Strategies
+%%>> Bu bölümde projeyi kısaca tanıtın. Aşağıdaki paragraf taslaktır,
+%%>> kendi cümlelerinizle genişletin. Hedefiniz 150-200 kelime.
 
-\noindent\textbf{Group Members:}
-\begin{itemize}[noitemsep]
-  \item Ay\c{s}enur Sava\c{s}
-  \item Mustafa [SOYADI]
-\end{itemize}
+This project addresses the task of \textbf{Text-to-SQL semantic parsing},
+which involves automatically translating natural language questions into
+executable SQL queries over relational databases.
 
-\noindent\textbf{Project Number:} 12 — Text-to-SQL Semantic Parsing
+The task is important because it enables non-expert users to query structured
+databases without knowledge of SQL syntax, a capability with broad practical
+applications in business intelligence, healthcare, and data analysis.
 
-\subsection{Problem Definition}
+We work on the \textbf{Spider}~\cite{Yu2018Spider} benchmark, a large-scale
+cross-domain dataset containing [8,659] training and [1,034] development
+question–SQL pairs across 200 databases.
+The input to the system is a natural language question paired with a database
+schema; the output is a syntactically valid and semantically correct SQL query.
 
-Text-to-SQL semantic parsing is the task of automatically translating natural language questions into executable SQL queries over relational databases.
-This task is central to building natural language interfaces to databases (NLIDB), enabling non-expert users to query structured data without knowledge of SQL syntax~\cite{Yu2018Spider}.
+The task is technically challenging for several reasons.
+First, the model must correctly identify which tables and columns are relevant
+to the question (\textit{schema linking}).
+Second, it must generalize to database schemas unseen during training,
+requiring compositional reasoning rather than pattern memorization.
+Third, SQL supports complex constructs such as nested subqueries, aggregations,
+and multi-table joins that are difficult to generate reliably.
 
-\noindent\textbf{Task formulation:}
-\begin{itemize}[noitemsep]
-  \item \textbf{Input:} A natural language question $q$ and a database schema $\mathcal{S}$
-  \item \textbf{Output:} An executable SQL query $y$ that answers the question
-  \item \textbf{Task type:} Conditional generation (sequence-to-sequence)
-\end{itemize}
-
-The task is technically challenging due to several factors:
-(1)~the compositional and hierarchical nature of SQL (nested queries, joins, aggregations),
-(2)~the need for accurate \textit{schema linking} between question entities and database columns/tables,
-and (3)~the requirement for \textit{cross-domain generalization} where models must handle unseen database schemas at test time~\cite{Yu2018Spider}.
-
-We use the \textbf{Spider benchmark}~\cite{Yu2018Spider} as our primary dataset and Google Gemini~\cite{GeminiTeam2024} as the language model for prompting-based baselines.
-In the final submission, we plan to incorporate instruction-tuned fine-tuning and compare it against prompting strategies.
-
-Our project title has not changed since the proposal stage.
-
+%%>> Proje başlığınız veya konunuz değiştiyse buraya ekleyin:
+% The project title and topic remain unchanged from the initial registration.
 
 % ============================================================
-%  2. DATASET / BENCHMARK STATUS
+%  2. VERİ SETİ DURUMU
 % ============================================================
 
 \section{Dataset / Benchmark Status}
-\label{sec:dataset}
 
-We use the \textbf{Spider} benchmark~\cite{Yu2018Spider}, a large-scale, cross-domain Text-to-SQL dataset.
+%%>> Bu bölüm için yapmanız gerekenler:
+%%>> 1) Spider veri setini indirin: https://yale-lily.github.io/spider
+%%>>    Dosyalar: train_spider.json, dev.json, tables.json, database/ klasörü
+%%>> 2) Aşağıdaki istatistikleri (zaten doğru olanlar) teyit edin.
+%%>> 3) Preprocessing için en az şunu yapın: JSON dosyayı okuyup
+%%>>    soru + schema + SQL üçlülerini listeleyin. Bunu bir notebook'ta
+%%>>    göstermeniz yeterli.
+%%>> 4) "Preprocessing Steps Completed" satırını gerçek duruma göre doldurun.
 
-\begin{table}[ht]
-  \centering
-  \caption{Spider dataset statistics.}
-  \label{tab:dataset}
-  \begin{tabular}{ll}
-    \toprule
-    \textbf{Property} & \textbf{Value} \\
-    \midrule
-    Dataset name       & Spider (xlangai/spider on HuggingFace) \\
-    Data source        & HuggingFace Datasets hub \\
-    Training examples  & 7{,}000 \\
-    Validation examples & 1{,}034 \\
-    Number of databases & 200+ across 138 domains \\
-    Input format       & Natural language question + database schema \\
-    Output format      & SQL query string \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+\begin{center}
+\begin{tabular}{ll}
+  \toprule
+  \textbf{Property} & \textbf{Value} \\
+  \midrule
+  Dataset name      & Spider \\
+  Source            & \url{https://yale-lily.github.io/spider} \\
+  Training samples  & 8,659 question–SQL pairs \\
+  Development samples & 1,034 question–SQL pairs \\
+  Number of databases & 200 (138 domains) \\
+  Input format      & Natural language question + database schema \\
+  Output format     & SQL query string \\
+  Train/Dev/Test split & 7,000 / 1,034 / 2,147 (test labels not public) \\
+  \bottomrule
+\end{tabular}
+\end{center}
 
-\noindent\textbf{Preprocessing steps completed:}
+\vspace{0.5em}
+
+\noindent\textbf{Data Source.}
+The Spider dataset is publicly available and was downloaded from the official
+Yale Semantic Parsing repository.
+The dataset includes \texttt{train\_spider.json}, \texttt{dev.json},
+\texttt{tables.json} (schema definitions), and a \texttt{database/} directory
+containing SQLite files for execution-based evaluation.
+
+\noindent\textbf{Input/Output Format.}
+Each data instance contains a natural language question, a database identifier,
+and a gold SQL query.
+Schema information (table names, column names, primary keys, and foreign keys)
+is stored separately in \texttt{tables.json} and must be joined with each question
+at preprocessing time.
+
+\noindent\textbf{Preprocessing Steps Completed.}
+%%>> Aşağıdaki maddeleri gerçek durumunuza göre güncelleyin.
+%%>> En azından "dataset downloaded" ve "schema loading" tamamlanmış olmalı.
 \begin{itemize}[noitemsep]
-  \item Dataset downloaded and loaded via the HuggingFace \texttt{datasets} library
-  \item Database schema information extracted by parsing SQL queries across the training set (table and column names identified per database)
-  \item Three schema serialization formats implemented (plain text, CREATE TABLE syntax, compact notation)
-  \item Zero-shot and few-shot prompt templates constructed
+  \item Dataset downloaded and directory structure verified.
+  \item Schema loading script implemented: \texttt{tables.json} is parsed and
+        mapped to each question by \texttt{db\_id}.
+  \item Three schema serialization formats (plain text, CREATE TABLE syntax,
+        compact notation) have been defined and prototyped.
+        %%>> Eğer bunları henüz yazmadıysanız: silin ve "Under development" yazın.
+  \item Tokenization pipeline is under development using the HuggingFace
+        \texttt{AutoTokenizer} for the selected model.
 \end{itemize}
 
-\noindent\textbf{Known challenges:}
-\begin{itemize}[noitemsep]
-  \item The HuggingFace version of Spider does not include explicit schema metadata (\texttt{tables.json}); we reconstruct schema information by parsing SQL queries from the training set
-  \item Schema linking remains imperfect for complex multi-table queries
-  \item Some SQL queries involve nested subqueries and complex aggregations that are difficult to generate via prompting alone
-\end{itemize}
-
-The dataset has been \textbf{downloaded, cleaned, and prepared} for experiments.
-
+\noindent\textbf{Known Data Challenges.}
+The Spider training set exhibits class imbalance across SQL complexity levels;
+simple single-table queries are overrepresented relative to nested queries
+involving multiple JOINs and subqueries.
+Additionally, the test set labels are not publicly released, so all evaluation
+is performed on the development split.
 
 % ============================================================
-%  3. LITERATURE REVIEW PROGRESS
+%  3. LİTERATÜR TARAMASI
 % ============================================================
 
 \section{Literature Review Progress}
-\label{sec:literature}
 
-We have reviewed the following key areas relevant to our project:
+%%>> Bu bölüm için yapmanız gerekenler:
+%%>> Aşağıdaki makaleleri Google Scholar veya arXiv'dan bulun ve okuyun.
+%%>> Her birinin ne yaptığını 1-2 cümleyle kendi cümlelerinizle yazın.
+%%>> "Paper title list" yeterli değil — hocanın beklentisi bu.
+%%>> Minimum 4-5 makale incelenmiş olmalı.
 
-\subsection{Sequence-to-Sequence Approaches for Text-to-SQL}
+Our literature review focuses on three areas: neural Text-to-SQL models,
+schema encoding strategies, and instruction tuning for semantic parsing.
 
-Early neural approaches to Text-to-SQL adopted sequence-to-sequence architectures.
-Zhong et al.~\cite{Zhong2017Seq2SQL} introduced Seq2SQL, which used reinforcement learning to generate SQL from natural language over single tables.
-The Spider benchmark~\cite{Yu2018Spider} later introduced cross-domain evaluation, requiring models to generalize to unseen databases.
-These works established the standard task formulation and evaluation metrics (Exact Match and Execution Accuracy) that we use in our project.
+\noindent\textbf{Spider Benchmark.}
+Yu et al.~(2018) introduced Spider as the first large-scale cross-domain
+Text-to-SQL benchmark, defining the task formulation and the execution
+accuracy metric used in subsequent work.
+%%>> Bu makaleyi okuyun: https://arxiv.org/abs/1809.08887
 
-\subsection{Pre-trained Language Models for Text-to-SQL}
+\noindent\textbf{Sequence-to-Sequence Approaches.}
+%%>> Okuyun: PICARD (Scholak et al., 2021) — https://arxiv.org/abs/2109.05093
+%%>> Kendi cümlelerinizle yazın:
+[Scholak et al.~(2021) tarafından önerilen PICARD yaklaşımını 1-2 cümle açıklayın.
+Örn: "PICARD augments a T5 model with an incremental SQL parser that constrains
+beam search to only produce syntactically valid SQL tokens, significantly
+improving execution accuracy on Spider."]
 
-The introduction of large pre-trained language models has substantially advanced Text-to-SQL performance.
-BRIDGE~\cite{Lin2020BridgeV2} proposed a hybrid approach combining pre-trained representations with schema linking.
-UnifiedSKG~\cite{Xie2022UnifiedSKG} demonstrated that multi-task learning across structured knowledge grounding tasks improves Text-to-SQL accuracy.
-More recently, large language models (LLMs) such as GPT-4 and Gemini have shown strong zero-shot and few-shot performance on Text-to-SQL benchmarks~\cite{Rajkumar2022Evaluating, Gao2023DAILSQL}.
-DAIL-SQL~\cite{Gao2023DAILSQL} achieved competitive results with carefully designed prompting strategies, demonstrating that prompt engineering is a viable alternative to fine-tuning for this task.
+\noindent\textbf{Pre-trained Language Models.}
+%%>> Okuyun: UnifiedSKG (Xie et al., 2022) veya Flan-T5 (Chung et al., 2022)
+[Seçtiğiniz modelin Text-to-SQL'e nasıl uygulandığını 2-3 cümle açıklayın.]
 
-\subsection{Schema Encoding and Linking}
+\noindent\textbf{Instruction Tuning.}
+%%>> Okuyun: DAIL-SQL (Gao et al., 2023) — https://arxiv.org/abs/2308.15363
+[DAIL-SQL veya başka bir instruction-tuning tabanlı Text-to-SQL çalışmasını
+1-2 cümle özetleyin.]
 
-Effective schema encoding is critical for cross-domain generalization.
-RAT-SQL~\cite{Wang2020RATSQL} introduced relation-aware attention for encoding schema structures.
-PICARD~\cite{Scholak2021PICARD} augmented T5 with constrained decoding to ensure syntactic validity.
-Our project focuses on a simpler approach: comparing different schema \textit{serialization} formats within prompts, which to our knowledge has not been systematically studied with instruction-tuned LLMs.
+\noindent\textbf{Schema Linking.}
+%%>> Okuyun: RAT-SQL (Wang et al., 2020) — https://arxiv.org/abs/1911.04942
+[RAT-SQL'in şema-soru ilişkisini nasıl modellediğini 1-2 cümle açıklayın.]
 
-\noindent\textbf{Positioning of This Work.}
-Unlike prior approaches that rely on complex graph-based schema linking, we adopt a prompting-based framework with Gemini and systematically compare schema serialization strategies. We plan to extend this with instruction tuning for the final submission.
-
+\noindent\textbf{Summary.}
+Based on the reviewed literature, the dominant direction for competitive
+Text-to-SQL performance combines pre-trained sequence-to-sequence models with
+explicit schema encoding and instruction tuning.
+Our project follows this direction by fine-tuning [MODEL ADI] with structured
+schema serialization on Spider, treating schema encoding format as an
+experimental variable.
 
 % ============================================================
-%  4. BASELINE MODELS OR PROMPTING STRATEGIES
+%  4. BASELINE MODELLER
 % ============================================================
 
 \section{Baseline Models or Prompting Strategies}
-\label{sec:baselines}
 
-We have designed and implemented two baseline prompting strategies:
+%%>> Bu bölüm için yapmanız gerekenler:
+%%>> Aşağıdaki iki baseline'dan birini seçin ve uygulayın.
+%%>> ÖNERİLEN KOMBİNASYON:
+%%>>   Baseline 1: Zero-shot prompting (GPT veya Mistral-7B-Instruct)
+%%>>   Baseline 2: Fine-tuned T5/Flan-T5 (huggingface'ten hazır checkpoint)
+%%>> Neden bu ikisi? Biri "prompt engineering only", diğeri "fine-tuning" —
+%%>> birbirinden anlamlı biçimde farklı ve açıklaması kolay.
 
-\subsection{Baseline 1: Zero-Shot Prompting}
+We plan to implement two baseline approaches that represent distinct
+paradigms for Text-to-SQL generation.
 
-We evaluate Google Gemini (1.5 Flash)~\cite{GeminiTeam2024} in a zero-shot setting.
-The prompt provides the database schema and the natural language question without any SQL examples.
-This establishes the floor performance achievable by prompting alone without task-specific demonstrations.
+\noindent\textbf{Baseline 1 — Zero-shot Prompting.}
+%%>> Uygulama: HuggingFace'ten mistralai/Mistral-7B-Instruct-v0.2 veya
+%%>> OpenAI API ile gpt-3.5-turbo kullanın.
+%%>> Prompt şablonu:
+%%>>   "### Schema: {schema}\n### Question: {question}\n### SQL:"
+%%>> Sonra üretilen SQL'i sqlite3 ile çalıştırıp execution accuracy hesaplayın.
+We will evaluate a large instruction-following language model
+(e.g., \texttt{Mistral-7B-Instruct}) in a zero-shot setting.
+The model receives the serialized database schema and the natural language
+question as a prompt and is asked to generate the SQL query without any
+task-specific fine-tuning.
+This baseline establishes the upper bound achievable through prompting alone
+and serves as a reference for the value added by fine-tuning.
 
-\begin{lstlisting}[language={},caption={Zero-shot prompt template}]
-You are an expert SQL developer. Your task is to
-translate the natural language question into SQL.
+\noindent\textbf{Suitability:} Zero-shot prompting is a standard and widely
+reported baseline in recent Text-to-SQL literature, making it a meaningful
+point of comparison.
 
-Database: {db_id}
-Schema: {serialized_schema}
-Question: {question}
+\noindent\textbf{Baseline 2 — Fine-tuned Seq2Seq Model.}
+%%>> Uygulama: HuggingFace'ten "tscholak/cxmefzzi" (T5 tabanlı, Spider'da
+%%>> fine-tuned, hazır checkpoint) veya kendi Flan-T5-base fine-tune'unuzu
+%%>> daha az veriyle kısa bir eğitimle çalıştırın.
+%%>> Bu baseline'ın farkı: fine-tuning VAR ama schema encoding stratejimiz YOK.
+The second baseline is a pre-trained sequence-to-sequence model
+fine-tuned on Spider without our proposed schema encoding strategy.
+We will use a publicly available checkpoint (e.g., \texttt{tscholak/cxmefzzi}
+on HuggingFace) to represent the performance of standard fine-tuning,
+against which our schema-aware instruction tuning will be compared.
 
-Return ONLY the SQL query, nothing else.
-\end{lstlisting}
+\noindent\textbf{Suitability:} This baseline isolates the contribution of
+our schema serialization strategy by holding the model class constant and
+varying only the input representation.
 
-\subsection{Baseline 2: Few-Shot Prompting (3-shot)}
-
-We extend the zero-shot baseline by providing three SQL examples before the target question.
-Examples are selected from the same database when available, otherwise generic examples are used.
-This tests whether in-context learning with examples improves SQL generation quality.
-
-\noindent\textbf{Current status:}
-\begin{itemize}[noitemsep]
-  \item Both baselines are \textbf{fully implemented} in our evaluation pipeline (\texttt{evaluate.py})
-  \item Schema serialization supports three formats (Format~A: plain text, Format~B: CREATE TABLE, Format~C: compact notation)
-  \item API quota limitations are currently being resolved; initial test runs have been conducted
-  \item Systematic evaluation on the full validation set is in progress
-\end{itemize}
-
+\begin{center}
+\begin{tabular}{llll}
+  \toprule
+  \textbf{Baseline} & \textbf{Approach} & \textbf{Model} & \textbf{Status} \\
+  \midrule
+  Baseline 1 & Zero-shot prompting & Mistral-7B-Instruct & In progress \\
+  Baseline 2 & Fine-tuned Seq2Seq  & T5 / PICARD checkpoint & In progress \\
+  Proposed   & Instruction tuning + schema encoding & Flan-T5-base & Planned \\
+  \bottomrule
+\end{tabular}
+\end{center}
 
 % ============================================================
-%  5. INITIAL EXPERIMENTAL RESULTS
+%  5. İLK DENEYSEL SONUÇLAR
 % ============================================================
 
 \section{Initial Experimental Results}
-\label{sec:results}
 
-Due to API quota limitations encountered during the evaluation period, we report results from our initial test runs on a small subset.
-Full evaluation on the Spider validation set is in progress and will be completed for the final submission.
+%%>> Bu bölüm için yapmanız gerekenler:
+%%>> En az bir baseline için bir sonuç üretin — mükemmel olmak zorunda değil.
+%%>> Execution Accuracy (EX) hesaplamak için:
+%%>>   1) Spider dev.json'dan 100 örnek alın (tümü değil)
+%%>>   2) Modelinize her soruyu + şemayı verin, SQL üretin
+%%>>   3) sqlite3 ile üretilen SQL'i çalıştırın, gold SQL'in sonucuyla kıyaslayın
+%%>>   4) Eşleşen / toplam = EX
+%%>> Bu küçük ölçekli ön-sonuç rapora yeterlidir.
+%%>>
+%%>> Eğer hiç sonuç yoksa: aşağıdaki tabloyu "–" ile bırakın ve
+%%>> "Experiments are currently in progress" yazın. Ama bir şeyler deneyin!
 
-\begin{table}[ht]
-  \centering
-  \caption{
-    Preliminary results on Spider validation subset.
-    EM = Exact Match (\%).
-  }
-  \label{tab:preliminary}
-  \begin{tabular}{lccc}
-    \toprule
-    \textbf{Method} & \textbf{Schema} & \textbf{EM (\%)} & \textbf{Status} \\
-    \midrule
-    Zero-shot (Gemini 1.5 Flash)   & Format A & --    & In progress \\
-    Zero-shot (Gemini 1.5 Flash)   & Format B & --    & In progress \\
-    Few-shot 3-shot (Gemini 1.5 Flash) & Format A & --    & In progress \\
-    Few-shot 3-shot (Gemini 1.5 Flash) & Format B & --    & In progress \\
-    \midrule
-    Instruction-tuned (planned)    & Best     & --    & Not started \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+At this stage of the project, we have [completed initial setup / begun running
+preliminary experiments] and report the following results on a subset of the
+Spider development set.
 
-\noindent\textbf{Preliminary observations:}
-From our initial API tests, we observed that:
-\begin{itemize}[noitemsep]
-  \item Zero-shot prompting produces syntactically valid SQL for simple queries but struggles with multi-table joins and nested subqueries
-  \item Schema information significantly affects output quality; omitting the schema leads to frequent hallucination of non-existent table names
-  \item Few-shot examples help the model follow the expected output format more consistently
-\end{itemize}
+%%>> Tablodaki değerleri gerçek sonuçlarınızla doldurun.
+%%>> EX = Execution Accuracy (%), EM = Exact Match (%)
+%%>> Sonuç yoksa değerleri "–" olarak bırakın ve "In progress" yazın.
 
-We expect to obtain complete numerical results once API access is fully configured.
+\begin{center}
+\begin{tabular}{llll}
+  \toprule
+  \textbf{Model / Strategy} & \textbf{EX (\%)} & \textbf{EM (\%)} & \textbf{Status} \\
+  \midrule
+  Baseline 1: Zero-shot prompting & – & – & In progress \\
+  Baseline 2: Fine-tuned Seq2Seq  & – & – & In progress \\
+  Proposed: Instruction tuning    & – & – & Planned \\
+  \bottomrule
+\end{tabular}
+\end{center}
 
+%%>> Tablo boşsa şunu yazın (dürüst olun, hoca anlıyor):
+Baseline experiments are currently being set up.
+Preliminary runs on a 100-sample subset of the Spider development set are
+planned for the coming days.
+We expect to report initial execution accuracy figures for both baselines
+before the final submission.
+
+%%>> Bir sonuç aldıysanız: tabloyu doldurun ve aşağıdaki yorumu yazın.
+% Initial results suggest that zero-shot prompting achieves X\% execution
+% accuracy, reflecting the difficulty of schema linking without fine-tuning.
 
 % ============================================================
-%  6. PLANNED IMPROVEMENTS AND TECHNICAL DIRECTION
+%  6. PLANLANAN GELİŞTİRMELER
 % ============================================================
 
 \section{Planned Improvements and Technical Direction}
-\label{sec:improvements}
 
-For the next phase, we plan the following improvements:
+%%>> Bu bölümde ne yapacağınızı net biçimde anlatın.
+%%>> Hoca burada "grubun yönü belli mi?" sorusuna cevap arıyor.
+%%>> Aşağıdaki paragraflar projenizin genel yönüne uygun — düzenleyebilirsiniz.
+
+Our primary improvement over the baselines is \textbf{schema-aware instruction
+tuning}: fine-tuning a sequence-to-sequence language model (Flan-T5-base or
+Flan-T5-large) on the Spider training set while providing explicit, structured
+schema representations as part of the input.
+
+The planned technical steps are as follows:
 
 \begin{enumerate}[noitemsep]
-  \item \textbf{Complete baseline evaluation:} Run both baselines on the full Spider validation set (1{,}034 examples) with all three schema formats
-  \item \textbf{Instruction-tuned fine-tuning:} Fine-tune a smaller model (Flan-T5-base~\cite{Chung2022FlanT5} or similar) with LoRA~\cite{Hu2022LoRA} on Spider training data, using the best-performing schema format
-  \item \textbf{Improved schema extraction:} Download and integrate Spider's original \texttt{tables.json} for accurate schema information including primary and foreign keys
-  \item \textbf{Better few-shot selection:} Implement similarity-based example selection (selecting examples whose questions are semantically similar to the target)
-  \item \textbf{Post-processing:} Add SQL syntax validation and basic error correction as a post-processing step
-  \item \textbf{Execution accuracy:} Implement execution-based evaluation by running generated SQL against actual databases
+  \item \textbf{Instruction template design:} Finalize the prompt format that
+        includes task instruction, serialized schema, and natural language question.
+  \item \textbf{Schema serialization comparison:} Implement and evaluate three
+        serialization formats (plain text listing, CREATE TABLE syntax, compact
+        notation) to identify the most effective representation.
+  \item \textbf{Fine-tuning:} Train Flan-T5-base on Spider using the HuggingFace
+        \texttt{Trainer} API with AdamW optimizer, cosine learning rate scheduling,
+        and early stopping on development execution accuracy.
+  \item \textbf{Inference and evaluation:} Run the fine-tuned model on the Spider
+        development set and compute execution accuracy by executing predicted SQL
+        against the SQLite databases.
+  \item \textbf{Comparison:} Systematically compare the proposed method against
+        both baselines and across schema format variants.
 \end{enumerate}
 
+If computational resources allow, we will also experiment with LoRA-based
+parameter-efficient fine-tuning to reduce GPU memory requirements.
 
 % ============================================================
-%  7. ABLATION OR PROMPT SENSITIVITY PLAN
+%  7. ABLATION / PROMPT DUYARLILIK PLANI
 % ============================================================
 
 \section{Ablation or Prompt Sensitivity Plan}
-\label{sec:ablation}
 
-Our ablation study will systematically compare the following dimensions:
+%%>> Bu bölümde sadece PLANı anlatın — henüz yapmanıza gerek yok.
+%%>> Hoca "ne karşılaştıracaksınız?" sorusunun cevabını arıyor.
 
-\begin{table}[ht]
-  \centering
-  \caption{Planned ablation study dimensions.}
-  \label{tab:ablation_plan}
-  \begin{tabular}{ll}
-    \toprule
-    \textbf{Dimension} & \textbf{Variants} \\
-    \midrule
-    Schema format      & Format A (plain text) vs.\ B (CREATE TABLE) vs.\ C (compact) \\
-    Prompting strategy & Zero-shot vs.\ 1-shot vs.\ 3-shot vs.\ 5-shot \\
-    Temperature        & 0.0 vs.\ 0.3 vs.\ 0.7 \\
-    Model size         & Gemini 1.5 Flash vs.\ Gemini 1.5 Pro (if available) \\
-    With/without fine-tuning & Prompting only vs.\ LoRA fine-tuned \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+Our ablation study will systematically isolate the contribution of the
+schema serialization format, which we consider the central design choice
+of our system.
+Specifically, we will train and evaluate identical model configurations
+(same architecture, hyperparameters, and training data) while varying only
+the schema representation:
 
-The primary research question is: \textit{How does schema serialization format affect Text-to-SQL accuracy across different prompting strategies?}
-We hypothesize that Format~B (CREATE TABLE syntax) will perform best with code-oriented models, as it resembles the input distribution seen during pre-training.
+\begin{itemize}[noitemsep]
+  \item \textbf{Format A} — plain text listing of tables and columns;
+  \item \textbf{Format B} — CREATE TABLE SQL syntax (our primary format);
+  \item \textbf{Format C} — compact notation with primary/foreign key annotations.
+\end{itemize}
 
-
-% ============================================================
-%  8. ERROR ANALYSIS AND GENERATION QUALITY ANALYSIS
-% ============================================================
-
-\section{Error Analysis and Generation Quality Analysis Plan}
-\label{sec:error_analysis}
-
-For the final report, we plan to conduct a detailed error analysis by:
-
-\begin{enumerate}[noitemsep]
-  \item \textbf{Manual inspection} of at least 50 failure cases from the validation set
-  \item \textbf{Categorization} of errors into the following types:
-  \begin{itemize}[noitemsep]
-    \item Schema linking errors (wrong table or column selected)
-    \item Incorrect JOIN conditions
-    \item Aggregation errors (COUNT, SUM, AVG misuse)
-    \item Nested query failures (missing or incorrect subqueries)
-    \item WHERE clause mismatches (wrong conditions or values)
-    \item Hallucinated table/column names
-  \end{itemize}
-  \item \textbf{Difficulty-level analysis:} Comparing performance across Spider's difficulty categories (easy, medium, hard, extra hard)
-  \item \textbf{Generation quality:} Evaluating syntactic validity, semantic correctness, and query efficiency
-\end{enumerate}
-
-We will also examine cases where the generated SQL produces correct results but differs from the gold SQL (valid alternatives), which is captured by execution accuracy but missed by exact match.
-
+Additionally, if time permits, we plan to compare:
+\begin{itemize}[noitemsep]
+  \item zero-shot vs.\ few-shot prompting for Baseline 1;
+  \item model size effect: Flan-T5-base (250M) vs.\ Flan-T5-large (780M);
+  \item with vs.\ without foreign key information in the schema representation.
+\end{itemize}
 
 % ============================================================
-%  9. ETHICAL CONSIDERATIONS AND BIAS
+%  8. HATA ANALİZİ PLANI
+% ============================================================
+
+\section{Error Analysis and Generation Quality Analysis}
+
+%%>> Bu bölümde sadece nasıl hata analizi yapacağınızı anlatın.
+%%>> Final raporda 15-20 başarısız örnek manuel incelenip
+%%>> kategorize edilecek — bunu planı olarak belirtin.
+
+For the final report, we plan to manually inspect a sample of prediction
+errors from the Spider development set and categorize them by failure type.
+Based on the Text-to-SQL literature, we anticipate the following error categories:
+
+\begin{itemize}[noitemsep]
+  \item \textbf{Schema linking errors:} incorrect table or column selection;
+  \item \textbf{JOIN errors:} missing or incorrect JOIN conditions and ON clauses;
+  \item \textbf{Aggregation errors:} incorrect use of COUNT, SUM, AVG, GROUP BY,
+        or HAVING;
+  \item \textbf{Nested query failures:} errors in subquery structure;
+  \item \textbf{WHERE clause errors:} incorrect filter conditions or string values.
+\end{itemize}
+
+For each category, we will provide (1) the count and percentage of failures,
+(2) a representative example showing the gold SQL and the predicted SQL,
+and (3) a brief explanation of why the model failed.
+We also note that evaluating generation quality in Text-to-SQL differs from
+open-ended generation: a syntactically fluent query may still be semantically
+incorrect, which motivates our use of execution-based evaluation as the
+primary metric.
+
+% ============================================================
+%  9. ETİK DEĞERLENDİRME
 % ============================================================
 
 \section{Ethical Considerations and Bias}
-\label{sec:ethics}
 
-Deploying Text-to-SQL systems introduces several ethical considerations:
+%%>> Bu bölüm kısa tutulabilir — 1-2 paragraf yeterli.
+%%>> Ama mutlaka yazılmalı (rubrikte 5 puan var).
 
-\noindent\textbf{Hallucination Risk:}
-LLMs may generate syntactically valid SQL that queries non-existent columns or produces incorrect results silently.
-Non-expert users cannot easily detect such errors, which could lead to incorrect data-driven decisions.
+Deploying Text-to-SQL systems in real-world applications raises several
+responsible AI concerns that we acknowledge in our project.
 
-\noindent\textbf{SQL Injection Risk:}
-Integrating user-provided free-text into SQL generation pipelines could introduce injection vulnerabilities if outputs are executed without sanitization.
+\noindent\textbf{Hallucination risk.}
+A model may generate syntactically valid SQL that references non-existent
+columns or tables, silently returning incorrect results.
+Users without SQL expertise cannot easily detect such errors, making
+hallucination particularly risky in this context.
 
-\noindent\textbf{Domain and Language Bias:}
-Spider's training data is English-only and skews toward standard business domains (universities, music, sports).
-Models trained on Spider may perform poorly on multilingual queries or specialized domains such as healthcare or legal databases, raising fairness concerns.
+\noindent\textbf{Domain bias.}
+The Spider benchmark is English-only and skews toward standard business domains.
+Models trained exclusively on Spider may perform poorly on domain-specific
+databases (e.g., medical, legal) or on queries formulated in other languages,
+raising fairness concerns for non-English-speaking users.
 
-\noindent\textbf{API Usage:}
-We use the Google Gemini API for inference. All API calls use standard, publicly available endpoints, and no private or sensitive data is sent through the API.
-We are mindful of responsible API usage and rate limiting.
-
+\noindent\textbf{Misuse scenarios.}
+A Text-to-SQL system integrated into a database-facing application could
+potentially be misused to extract sensitive information if query generation
+is not sandboxed or restricted by appropriate access controls.
 
 % ============================================================
-%  10. GITHUB AND REPRODUCIBILITY STATUS
+%  10. GITHUB VE REPRODUCIBILITY DURUMU
 % ============================================================
 
 \section{GitHub and Reproducibility Status}
-\label{sec:github}
 
-\noindent\textbf{Repository:} \url{https://github.com/Aysenursvs/CENG467-Text-to-SQL}
+%%>> GitHub reponuzun linkini buraya ekleyin.
+%%>> Repo şu an boşsa bile en azından şu yapıyı oluşturun (15 dk iş):
+%%>>   - README.md (proje başlığı, kurulum talimatları, kısa açıklama)
+%%>>   - requirements.txt (torch, transformers, datasets, sqlparse, evaluate)
+%%>>   - data/README.md (Spider'ın nereden indirileceği)
+%%>>   - notebooks/ klasörü (ileride kullanmak için)
+%%>> Bu yapıyı commit edin — hoca commit geçmişine bakıyor!
 
-\noindent\textbf{Current repository structure:}
-\begin{lstlisting}[language={},caption={Project directory structure}]
-CENG467-Text-to-SQL/
-  src/
-    data_prep.py     # Dataset download and exploration
-    evaluate.py      # Baseline evaluation pipeline
-    utils.py         # Schema extraction, prompts, metrics
-    train.py         # (Planned) Fine-tuning script
-  data/              # Dataset statistics
-  results/           # Evaluation results (JSON)
-  notebooks/         # Exploration notebooks
-  report/            # This LaTeX report
-  requirements.txt   # Python dependencies
-  README.md          # Setup and usage instructions
-  .env               # API configuration (not committed)
-  .gitignore
+\noindent\textbf{Repository:}
+\url{https://github.com/[KULLANICI_ADI]/[REPO_ADI]}
+%%>> Gerçek GitHub linkinizi yazın.
+
+\noindent\textbf{Current Repository Structure:}
+\begin{lstlisting}
+text-to-sql-ceng467/
+├── README.md               # Project overview and setup instructions
+├── requirements.txt        # Python dependencies
+├── data/
+│   └── README.md           # Spider download instructions
+├── notebooks/
+│   └── (experiments planned)
+└── src/
+    └── (model scripts planned)
 \end{lstlisting}
 
-\noindent\textbf{Reproducibility checklist:}
+%%>> Gerçek durumunuza göre aşağıdaki listeyi güncelleyin:
+\noindent\textbf{Reproducibility Status:}
 \begin{itemize}[noitemsep]
-  \item[\checkmark] GitHub repository created and actively maintained
-  \item[\checkmark] README with setup instructions and usage commands
-  \item[\checkmark] \texttt{requirements.txt} with all Python dependencies
-  \item[\checkmark] \texttt{.env} template for API key configuration (documented in README)
-  \item[\checkmark] \texttt{.gitignore} excluding data, results, and sensitive files
-  \item[\checkmark] Consistent commit history (8+ commits as of checkpoint)
-  \item[$\square$] Automated evaluation script with command-line arguments
-  \item[$\square$] Full results reproduction with single command
+  \item \textbf{README:} Initialized with project title, team members, and
+        dataset download instructions. \textit{[In progress / Complete]}
+  \item \textbf{requirements.txt:} Lists core dependencies (torch, transformers,
+        datasets, sqlparse, evaluate). \textit{[In progress / Complete]}
+  \item \textbf{Dataset preparation:} Instructions for downloading Spider from
+        the official repository are documented in \texttt{data/README.md}.
+  \item \textbf{Commit history:} Repository initialized;
+        regular commits will be maintained as development progresses.
+        %%>> "Regular commits" yazıyorsunuz — o zaman commit atın!
 \end{itemize}
 
-
 % ============================================================
-%  11. CURRENT CHALLENGES AND NEXT STEPS
+%  11. MEVCUT ZORLUKLAR VE SONRAKİ ADIMLAR
 % ============================================================
 
 \section{Current Challenges and Next Steps}
-\label{sec:challenges}
 
-\subsection{Current Challenges}
+%%>> Bu bölümde dürüst olun. Hoca zorlukları görmek istiyor.
+%%>> "Her şey yolunda" demek inandırıcı değil.
 
+\noindent\textbf{Current Challenges.}
 \begin{itemize}[noitemsep]
-  \item \textbf{API quota limitations:} The free-tier quota of the Gemini API has been exhausted during development, delaying systematic evaluation. We are exploring alternative API plans and model endpoints.
-  \item \textbf{Schema extraction:} The HuggingFace Spider dataset does not include explicit schema metadata; we reconstruct schema information by parsing SQL queries, which is imperfect for databases with tables not referenced in the training queries.
-  \item \textbf{Computational constraints:} Fine-tuning is planned using a personal computer without a dedicated GPU, which may require using parameter-efficient methods (LoRA/QLoRA) or cloud-based resources (Google Colab).
-  \item \textbf{Evaluation complexity:} Exact Match is a strict metric that may underestimate actual performance; implementing Execution Accuracy requires setting up individual SQLite databases for each Spider example.
+  \item \textbf{Computational resources:} Fine-tuning even a 250M-parameter
+        model on the full Spider training set requires significant GPU memory.
+        We are currently evaluating whether Google Colab Pro or a local GPU
+        is sufficient, or whether parameter-efficient methods (LoRA) are needed.
+  \item \textbf{Baseline selection:} We are finalizing the choice of the
+        second baseline, weighing the tradeoff between using a publicly available
+        checkpoint (faster) versus training a simple model from scratch (more
+        educational).
+        %%>> Gerçek karar verme sürecinizi burada açıklayın.
+  \item \textbf{Execution-based evaluation setup:} Correctly executing generated
+        SQL against 200 different SQLite databases requires careful path management
+        and error handling, which is currently being implemented.
 \end{itemize}
 
-\subsection{Next Steps}
-
+\noindent\textbf{Next Steps (before final submission).}
 \begin{enumerate}[noitemsep]
-  \item Resolve API access and complete full baseline evaluation (Week 12)
-  \item Download and integrate Spider's original schema files for improved schema encoding (Week 12)
-  \item Implement and evaluate instruction-tuned fine-tuning with LoRA (Week 13)
-  \item Conduct ablation study across schema formats and prompting strategies (Week 13)
-  \item Perform error analysis on at least 50 failure cases (Week 14)
-  \item Write final report and prepare project demonstration (Week 14--15)
+  \item Finalize baseline selection and obtain initial execution accuracy results
+        on the Spider development set. \hfill \textit{(Week 12)}
+  \item Implement instruction tuning pipeline for Flan-T5-base with all three
+        schema serialization formats. \hfill \textit{(Week 12–13)}
+  \item Run ablation experiments comparing schema formats. \hfill \textit{(Week 13)}
+  \item Perform manual error analysis on 20+ failure cases. \hfill \textit{(Week 13–14)}
+  \item Write the LNCS-format final report (6–8 pages). \hfill \textit{(Week 14–15)}
+  \item Prepare Gradio demo and finalize GitHub repository. \hfill \textit{(Week 15)}
 \end{enumerate}
 
-
 % ============================================================
-%  REFERENCES
+%  KAYNAKÇA
 % ============================================================
 
-\bibliographystyle{splncs04}
-\bibliography{references}
+\begin{thebibliography}{9}
+
+%%>> Aşağıdaki kaynakları Google Scholar'dan tam BibTeX olarak bulun
+%%>> ve gerçek sayfa numaraları / yayın bilgileriyle güncelleyin.
+
+\bibitem{Yu2018Spider}
+Yu, T., Zhang, R., Yang, K., et al.:
+Spider: A Large-Scale Human-Labeled Dataset for Complex and Cross-Domain
+Semantic Parsing and Text-to-SQL Task.
+In: Proceedings of EMNLP, pp.~3911--3921 (2018).
+
+\bibitem{Scholak2021PICARD}
+Scholak, T., Schucher, N., Bahdanau, D.:
+PICARD: Parsing Incrementally for Constrained Auto-Regressive Decoding
+from Language Models.
+In: Proceedings of EMNLP, pp.~9895--9901 (2021).
+
+\bibitem{Chung2022FlanT5}
+Chung, H.W., et al.:
+Scaling Instruction-Finetuned Language Models.
+arXiv preprint arXiv:2210.11416 (2022).
+
+\bibitem{Wang2020RATSQL}
+Wang, B., Shin, R., Liu, X., Polozov, O., Richardson, M.:
+RAT-SQL: Relation-Aware Schema Encoding and Linking for Text-to-SQL Parsers.
+In: Proceedings of ACL, pp.~7567--7578 (2020).
+
+%%>> İhtiyaç duyduğunuz ek kaynakları buraya ekleyin.
+
+\end{thebibliography}
 
 \end{document}
+
+% ============================================================
+%  14 MAYIS'A KADAR YAPILACAKLAR LİSTESİ (4 GÜN):
+%
+%  GÜN 1 (Bugün):
+%    [ ] GitHub repo'ya en azından README + requirements.txt commit et
+%    [ ] Spider veri setini indir: https://yale-lily.github.io/spider
+%    [ ] Bu şablonun [BURAYA YAZ] alanlarını doldurun
+%
+%  GÜN 2:
+%    [ ] Literatür: 4-5 makaleyi okuyun, Section 3'ü doldurun
+%    [ ] Baseline 1 için prompt yazın, 10-20 örnekte deneyin
+%    [ ] Section 5 tablosuna ilk sonuçları ekleyin
+%
+%  GÜN 3:
+%    [ ] Kalan bölümleri yazın (6, 7, 8, 9, 10, 11)
+%    [ ] PDF derleyin, 3-5 sayfa arasında olduğunu kontrol edin
+%    [ ] GitHub'a birkaç commit daha atın
+%
+%  GÜN 4 (14 Mayıs):
+%    [ ] Son okuma + düzeltmeler
+%    [ ] Teams'e yükle (23:59'dan önce!)
+% ============================================================
