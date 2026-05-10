@@ -90,7 +90,7 @@ Results are saved to `results/baseline_results.json`.
 - **Source:** [xlangai/spider on HuggingFace](https://huggingface.co/datasets/xlangai/spider)
 
 ## Team
-- Ayşenur Savaş
+- Ayşenur S
 - Mustafa [Soyadı]
 
 ## License

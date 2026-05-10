@@ -124,7 +124,7 @@ def main():
         print("  API testini atlıyorum...")
         return dataset
 
-    model = get_gemini_model("gemini-1.5-flash")
+    model = get_gemini_model("gemini-2.0-flash")
 
     # Basit test
     print("\n  Gemini API'ye test sorgusu gönderiliyor...")
