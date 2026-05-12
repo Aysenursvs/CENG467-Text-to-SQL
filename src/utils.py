@@ -454,7 +454,7 @@ def get_openrouter_client():
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
-def get_sql_prediction(client, prompt, model_name="baidu/cobuddy:free", max_retries=3, retry_delay=2):
+def get_sql_prediction(client, prompt, model_name="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", max_retries=3, retry_delay=2):
     """
     OpenRouter API ile SQL tahmini alır. Rate limit hatalarında retry yapar.
 

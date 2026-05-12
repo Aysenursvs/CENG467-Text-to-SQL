@@ -260,11 +260,11 @@ def main():
         help="Şema serileştirme formatı (default: format_a)"
     )
     parser.add_argument(
-        "--model", type=str, default="baidu/cobuddy:free",
-        help="OpenRouter model adı (default: baidu/cobuddy:free)"
+        "--model", type=str, default="inclusionai/ring-2.6-1t:free",
+        help="OpenRouter model adı (default: inclusionai/ring-2.6-1t:free)"
     )
     parser.add_argument(
-        "--delay", type=float, default=4.0,
+        "--delay", type=float, default=1.5,
         help="API istekleri arası bekleme süresi - saniye (default: 1.5)"
     )
 
