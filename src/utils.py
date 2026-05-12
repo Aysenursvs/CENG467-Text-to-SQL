@@ -29,8 +29,6 @@ load_dotenv()
 # parse ederek her db_id için bir şema sözlüğü oluşturuyoruz.
 #
 
-import sqlparse
-
 # Global schema cache — bir kez oluşturulur, sonra tekrar kullanılır
 _SCHEMA_CACHE = {}
 
@@ -456,7 +454,7 @@ def get_openrouter_client():
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
-def get_sql_prediction(client, prompt, model_name="inclusionai/ring-2.6-1t:free", max_retries=3, retry_delay=2):
+def get_sql_prediction(client, prompt, model_name="baidu/cobuddy:free", max_retries=3, retry_delay=2):
     """
     OpenRouter API ile SQL tahmini alır. Rate limit hatalarında retry yapar.
 

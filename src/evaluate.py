@@ -11,6 +11,7 @@ Metrics: Exact Match (EM)
 Usage:
     python src/evaluate.py --num_samples 50 --schema_format format_a
     python src/evaluate.py --num_samples 100 --schema_format format_b
+    python src/evaluate.py --num_samples 50 --schema_format format_b --delay 4.0
 """
 
 import os
@@ -259,11 +260,11 @@ def main():
         help="Şema serileştirme formatı (default: format_a)"
     )
     parser.add_argument(
-        "--model", type=str, default="inclusionai/ring-2.6-1t:free",
-        help="OpenRouter model adı (default: inclusionai/ring-2.6-1t:free)"
+        "--model", type=str, default="baidu/cobuddy:free",
+        help="OpenRouter model adı (default: baidu/cobuddy:free)"
     )
     parser.add_argument(
-        "--delay", type=float, default=1.5,
+        "--delay", type=float, default=4.0,
         help="API istekleri arası bekleme süresi - saniye (default: 1.5)"
     )
 
