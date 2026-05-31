@@ -2,16 +2,18 @@
 utils.py — Core utility functions for Text-to-SQL project.
 
 Contains:
-  - Schema extraction from Spider dataset
+  - Schema extraction from Spider dataset (Updated to use tables.json)
   - Schema serialization (3 formats: plain text, CREATE TABLE, compact)
   - Zero-shot and few-shot prompt builders
-    - SQL normalization and exact match calculation
-        - Mistral API wrapper for LLM inference
+  - SQL normalization and exact match calculation
+  - Mistral API wrapper for LLM inference
 """
 
 import os
 import re
 import time
+import json
+import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -21,99 +23,27 @@ load_dotenv()
 
 
 # =============================================================================
-#  1. SCHEMA EXTRACTION — SQL sorgularından şema bilgisi çıkarma
+#  1. SCHEMA EXTRACTION — Orijinal tables.json'dan şema bilgisi çıkarma
 # =============================================================================
 #
-# NOT: HuggingFace'deki Spider verisetinde (xlangai/spider) tablo/kolon
-# isimleri doğrudan verilmiyor. Bu yüzden eğitim setindeki SQL sorgularını
-# parse ederek her db_id için bir şema sözlüğü oluşturuyoruz.
+# NOT: Artık SQL'leri regex ile parse etmek (tahmin etmek) yerine Spider'ın 
+# resmi tables.json dosyasını kullanıyoruz. Bu sayede Primary Key ve Foreign
+# Key ilişkilerini modele %100 doğru aktararak halüsinasyonları çözeceğiz.
 #
 
 # Global schema cache — bir kez oluşturulur, sonra tekrar kullanılır
 _SCHEMA_CACHE = {}
 
 
-def _parse_tables_and_columns_from_sql(sql):
+def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
     """
-    Bir SQL sorgusundan tablo ve kolon isimlerini çıkarır.
-
-    Basit bir regex/keyword-based parser kullanır.
-    Mükemmel değildir ama Spider verisetindeki sorguların çoğu için yeterlidir.
-
-    Returns:
-        tables (set): Bulunan tablo isimleri
-        columns (dict): {tablo_adı: set(kolon_adları)} — eşleşebilenler
-        standalone_columns (set): Tabloya eşleştirilemeyen kolon isimleri
-    """
-    sql_upper = sql.upper()
-    sql_clean = sql.strip().rstrip(";")
-
-    tables = set()
-    columns = {}
-    standalone_columns = set()
-
-    # SQL anahtar kelimeleri (bunları tablo/kolon adı olarak alma)
-    sql_keywords = {
-        "SELECT", "FROM", "WHERE", "JOIN", "INNER", "LEFT", "RIGHT", "OUTER",
-        "ON", "AND", "OR", "NOT", "IN", "EXISTS", "BETWEEN", "LIKE", "IS",
-        "NULL", "AS", "ORDER", "BY", "GROUP", "HAVING", "LIMIT", "UNION",
-        "ALL", "DISTINCT", "COUNT", "SUM", "AVG", "MIN", "MAX", "ASC", "DESC",
-        "INSERT", "INTO", "VALUES", "UPDATE", "SET", "DELETE", "CREATE",
-        "TABLE", "DROP", "ALTER", "INDEX", "VIEW", "CASE", "WHEN", "THEN",
-        "ELSE", "END", "CROSS", "NATURAL", "USING", "EXCEPT", "INTERSECT",
-        "PRIMARY", "KEY", "FOREIGN", "REFERENCES", "INT", "TEXT", "FLOAT",
-        "REAL", "INTEGER", "VARCHAR", "CHAR", "BOOLEAN", "DATE", "DATETIME",
-        "VALUE", "TRUE", "FALSE", "WITH", "RECURSIVE", "OVER", "PARTITION",
-        "ROWS", "RANGE", "PRECEDING", "FOLLOWING", "CURRENT", "ROW", "OFFSET",
-    }
-
-    # 1. FROM ve JOIN'den tablo isimlerini çıkar
-    # FROM tablo1, tablo2  veya  FROM tablo1 JOIN tablo2
-    tokens = re.split(r"[\s,()]+", sql_clean)
-    i = 0
-    while i < len(tokens):
-        token_upper = tokens[i].upper()
-        if token_upper in ("FROM", "JOIN"):
-            # Sonraki token tablo adı olmalı
-            if i + 1 < len(tokens):
-                candidate = tokens[i + 1].strip("`\"'[]")
-                if candidate.upper() not in sql_keywords and candidate:
-                    tables.add(candidate.lower())
-        i += 1
-
-    # 2. "tablo.kolon" formatındaki referansları çıkar
-    dot_pattern = re.findall(r"(\w+)\.(\w+)", sql_clean)
-    for tbl, col in dot_pattern:
-        tbl_lower = tbl.lower()
-        col_lower = col.lower()
-        if tbl_lower not in {k.lower() for k in sql_keywords}:
-            tables.add(tbl_lower)
-            if tbl_lower not in columns:
-                columns[tbl_lower] = set()
-            if col_lower not in {k.lower() for k in sql_keywords}:
-                columns[tbl_lower].add(col_lower)
-
-    # 3. SELECT ve WHERE'den kolon isimlerini çıkar (tablo.kolon olmayanlar)
-    select_where_pattern = re.findall(
-        r"(?:SELECT|WHERE|ON|BY|HAVING)\s+(.+?)(?:\s+FROM|\s+WHERE|\s+GROUP|\s+ORDER|\s+HAVING|\s+LIMIT|$)",
-        sql_clean, re.IGNORECASE
-    )
-    for clause in select_where_pattern:
-        col_tokens = re.findall(r"\b(\w+)\b", clause)
-        for ct in col_tokens:
-            if ct.upper() not in sql_keywords and not ct.isdigit() and len(ct) > 1:
-                standalone_columns.add(ct.lower())
-
-    return tables, columns, standalone_columns
-
-
-def build_schema_cache(dataset):
-    """
-    Tüm eğitim verisindeki SQL sorgularını parse ederek her db_id için
-    bir şema sözlüğü oluşturur.
+    Spider'ın orijinal tables.json dosyasını okuyarak her db_id için
+    kusursuz bir şema sözlüğü oluşturur (PK ve FK dahil).
+    Eğer dosya yoksa Spider'ın resmi GitHub reposundan otomatik indirir.
 
     Args:
-        dataset: Hugging Face dataset nesnesi (train + validation)
+        dataset: (Geriye dönük uyumluluk için bırakıldı)
+        tables_json_path: tables.json dosyasının kaydedileceği/okunacağı yol
 
     Returns:
         dict: {db_id: {"tables": [{"name": str, "columns": [str]}], ...}}
@@ -123,47 +53,64 @@ def build_schema_cache(dataset):
     if _SCHEMA_CACHE:
         return _SCHEMA_CACHE
 
-    db_schemas = {}  # {db_id: {table_name: set(columns)}}
+    # Dosya yoksa internetten indir
+    if not os.path.exists(tables_json_path):
+        os.makedirs(os.path.dirname(tables_json_path) or ".", exist_ok=True)
+        print(f"  [Schema Extractor] {tables_json_path} bulunamadı.")
+        print(f"  [Schema Extractor] Orijinal tables.json GitHub'dan indiriliyor...")
+        url = "https://raw.githubusercontent.com/taoyds/spider/master/tables.json"
+        
+        try:
+            response = requests.get(url)
+            response.raise_for_status()
+            with open(tables_json_path, "w", encoding="utf-8") as f:
+                f.write(response.text)
+            print("  [Schema Extractor] İndirme başarılı!")
+        except Exception as e:
+            raise RuntimeError(f"tables.json indirilemedi: {e}")
 
-    # Train ve validation'daki tüm sorguları tara
-    for split_name in ["train", "validation"]:
-        if split_name not in dataset:
-            continue
-        for sample in dataset[split_name]:
-            db_id = sample["db_id"]
-            sql = sample["query"]
+    # JSON dosyasını oku ve parse et
+    with open(tables_json_path, "r", encoding="utf-8") as f:
+        tables_data = json.load(f)
 
-            if db_id not in db_schemas:
-                db_schemas[db_id] = {}
+    for db in tables_data:
+        db_id = db["db_id"]
+        table_names = db["table_names_original"]
+        column_names = db["column_names_original"]
+        primary_keys_idx = db.get("primary_keys", [])
+        foreign_keys_idx = db.get("foreign_keys", [])
 
-            tables, columns, standalone_cols = _parse_tables_and_columns_from_sql(sql)
+        # 1. Tablo iskeletlerini oluştur
+        tables_list = [{"name": t, "columns": []} for t in table_names]
 
-            # Tabloları ekle
-            for tbl in tables:
-                if tbl not in db_schemas[db_id]:
-                    db_schemas[db_id][tbl] = set()
+        # 2. Kolonları tablolara yerleştir
+        # Spider veri formatında column_names şöyledir: [[tablo_indexi, "kolon_adi"], ...]
+        # Index 0 genellikle [-1, "*"] olur (tüm tablolar için joker kolon), bunu atlıyoruz.
+        col_full_names = {}  # index -> "tablo_adi.kolon_adi"
 
-            # Kolon eşleştirmelerini ekle
-            for tbl, cols in columns.items():
-                if tbl not in db_schemas[db_id]:
-                    db_schemas[db_id][tbl] = set()
-                db_schemas[db_id][tbl].update(cols)
+        for idx, (tbl_idx, col_name) in enumerate(column_names):
+            if tbl_idx == -1:
+                continue  # "*" kolonunu yoksay
+            
+            table_name = table_names[tbl_idx]
+            tables_list[tbl_idx]["columns"].append(col_name)
+            col_full_names[idx] = f"{table_name}.{col_name}"
 
-            # Standalone kolonları mevcut tablolara ata (tek tablo varsa)
-            if len(tables) == 1 and standalone_cols:
-                tbl = list(tables)[0]
-                db_schemas[db_id][tbl].update(standalone_cols)
+        # 3. Primary Key'leri metne çevir (Örn: "department.Department_ID")
+        pk_list = [col_full_names[idx] for idx in primary_keys_idx if idx in col_full_names]
 
-    # Cache formatına dönüştür
-    for db_id, tables_dict in db_schemas.items():
+        # 4. Foreign Key'leri metne çevir (Örn: ["management.head_ID", "head.head_ID"])
+        fk_list = []
+        for fk_idx, pk_idx in foreign_keys_idx:
+            if fk_idx in col_full_names and pk_idx in col_full_names:
+                fk_list.append((col_full_names[fk_idx], col_full_names[pk_idx]))
+
+        # Cache'e kaydet
         _SCHEMA_CACHE[db_id] = {
             "db_id": db_id,
-            "tables": [
-                {"name": tbl, "columns": sorted(list(cols))}
-                for tbl, cols in sorted(tables_dict.items())
-            ],
-            "primary_keys": [],
-            "foreign_keys": [],
+            "tables": tables_list,
+            "primary_keys": pk_list,
+            "foreign_keys": fk_list,
         }
 
     return _SCHEMA_CACHE
@@ -171,34 +118,29 @@ def build_schema_cache(dataset):
 
 def extract_schema_from_sample(sample, dataset=None):
     """
-    Bir Spider örneğinin db_id'sine göre şema bilgisini döndürür.
-    İlk çağrıda tüm veri setinden şema cache'i oluşturulur.
+    Bir Spider örneğinin db_id'sine göre kusursuz şema bilgisini döndürür.
+    İlk çağrıda tables.json parse edilerek cache oluşturulur.
 
     Args:
         sample: Spider verisetinden bir örnek
-        dataset: (opsiyonel) Cache oluşturmak için veri seti
+        dataset: (Geriye dönük uyumluluk için bırakıldı)
 
     Returns:
         dict: {"db_id", "tables", "primary_keys", "foreign_keys"}
     """
     db_id = sample.get("db_id", "")
 
-    if dataset is not None and not _SCHEMA_CACHE:
-        build_schema_cache(dataset)
+    if not _SCHEMA_CACHE:
+        build_schema_cache()
 
     if db_id in _SCHEMA_CACHE:
         return _SCHEMA_CACHE[db_id]
 
-    # Cache'de yoksa, tek sorgudan çıkar
-    tables, columns, _ = _parse_tables_and_columns_from_sql(sample.get("query", ""))
-    table_list = []
-    for tbl in sorted(tables):
-        cols = sorted(list(columns.get(tbl, set())))
-        table_list.append({"name": tbl, "columns": cols})
-
+    # Eğer db_id bir şekilde tables.json'da yoksa (ki Spider'da hepsi vardır)
+    # Hata fırlatmak yerine boş bir taslak döndür (kodu çökertmemek için)
     return {
         "db_id": db_id,
-        "tables": table_list,
+        "tables": [],
         "primary_keys": [],
         "foreign_keys": [],
     }
