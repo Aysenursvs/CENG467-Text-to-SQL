@@ -1,0 +1,15 @@
+{
+  "dataset_name": "Spider (xlangai/spider)",
+  "train_size": 7000,
+  "validation_size": 1034,
+  "sample_fields": [
+    "db_id",
+    "query",
+    "question",
+    "query_toks",
+    "query_toks_no_value",
+    "question_toks"
+  ],
+  "unique_databases_train": 140,
+  "unique_databases_val": 20
+}
