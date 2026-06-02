@@ -2,7 +2,7 @@
 evaluate.py — Baseline evaluation pipeline for Text-to-SQL.
 
 This script evaluates two baseline prompting strategies on the Spider
-validation set using the OpenRouter API:
+validation set using the Mistral API:
   - Baseline 1: Zero-shot prompting
   - Baseline 2: Few-shot prompting (3-shot)
 
@@ -29,7 +29,7 @@ from utils import (
     SCHEMA_SERIALIZERS,
     create_zero_shot_prompt,
     create_few_shot_prompt,
-    get_openrouter_client,
+    get_mistral_client,
     get_sql_prediction,
     calculate_exact_match,
     get_few_shot_examples_from_dataset,
@@ -52,8 +52,8 @@ def evaluate_baseline(
 
     Args:
         dataset: HuggingFace dataset nesnesi
-        client: OpenRouter istemci nesnesi
-        model_name (str): OpenRouter model adı
+        client: Mistral istemci nesnesi
+        model_name (str): Mistral model adı
         baseline_type (str): "zero_shot" veya "few_shot"
         schema_format (str): "format_a", "format_b", "format_c"
         num_samples (int): Değerlendirilecek örnek sayısı
@@ -120,9 +120,9 @@ def evaluate_baseline(
             errors.append(pred_record)
 
         # İlerleme göstergesi
-        em_so_far = (correct / total) * 100
+        em_cumulative = (correct / total) * 100
         status = "✅" if em == 1 else "❌"
-        print(f"  [{i+1:3d}/{eval_samples}] {status} EM={em_so_far:.1f}% | {question[:60]}...")
+        print(f"  [{i+1:3d}/{eval_samples}] {status} Acc={em_cumulative:.1f}% ({correct}/{total}) | {question[:60]}...")
 
         # API rate limit: istekler arası bekleme
         if i < eval_samples - 1:
@@ -159,9 +159,9 @@ def run_full_evaluation(args):
     dataset = load_dataset("xlangai/spider")
     print(f"  Train: {len(dataset['train'])} | Validation: {len(dataset['validation'])}")
 
-    # OpenRouter istemcisini hazırla
-    print(f"\nOpenRouter model ayarlandı: {args.model}...")
-    client = get_openrouter_client()
+    # Mistral istemcisini hazırla
+    print(f"\nMistral model ayarlandı: {args.model}...")
+    client = get_mistral_client()
 
     # Sonuçlar
     all_results = {}
@@ -260,8 +260,8 @@ def main():
         help="Şema serileştirme formatı (default: format_a)"
     )
     parser.add_argument(
-        "--model", type=str, default="inclusionai/ring-2.6-1t:free",
-        help="OpenRouter model adı (default: inclusionai/ring-2.6-1t:free)"
+        "--model", type=str, default="mistral-small-latest",
+        help="Mistral model adı (default: mistral-small-latest)"
     )
     parser.add_argument(
         "--delay", type=float, default=1.5,

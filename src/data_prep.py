@@ -7,7 +7,7 @@ Bu script:
   3. Şema bilgisini otomatik olarak çıkarır
   4. 3 farklı şema serileştirme formatını gösterir
   5. Zero-shot ve few-shot prompt örnekleri oluşturur
-    6. OpenRouter API bağlantısını test eder
+    6. Mistral API bağlantısını test eder
 """
 
 import os
@@ -26,7 +26,7 @@ from utils import (
     serialize_schema_format_c,
     create_zero_shot_prompt,
     create_few_shot_prompt,
-    get_openrouter_client,
+    get_mistral_client,
     get_sql_prediction,
     calculate_exact_match,
     DEFAULT_FEW_SHOT_EXAMPLES,
@@ -113,23 +113,23 @@ def main():
     )
     print(fs_prompt[:500] + "...\n(kısaltıldı)")
 
-    # ─── 7. OpenRouter API testi ─────────────────────────────────────────────
+    # ─── 7. Mistral API testi ────────────────────────────────────────────────
     print("\n" + "=" * 60)
-    print("ADIM 5: OpenRouter API Bağlantı Testi")
+    print("ADIM 5: Mistral API Bağlantı Testi")
     print("=" * 60)
 
-    api_key = os.environ.get("OPENROUTER_API_KEY")
+    api_key = os.environ.get("MISTRAL_API_KEY") or os.environ.get("MISTRALAI_API_KEY")
     if not api_key:
-        print("  [UYARI] OPENROUTER_API_KEY bulunamadı! .env dosyanı kontrol et.")
+        print("  [UYARI] MISTRAL_API_KEY bulunamadı! .env dosyanı kontrol et.")
         print("  API testini atlıyorum...")
         return dataset
 
-    client = get_openrouter_client()
+    client = get_mistral_client()
 
     # Basit test
-    print("\n  OpenRouter API'ye test sorgusu gönderiliyor...")
+    print("\n  Mistral API'ye test sorgusu gönderiliyor...")
     test_prompt = create_zero_shot_prompt(question, db_id, schema_a)
-    prediction = get_sql_prediction(client, test_prompt, model_name="inclusionai/ring-2.6-1t:free")
+    prediction = get_sql_prediction(client, test_prompt, model_name="mistral-small-latest")
     target_sql = sample["query"]
     em = calculate_exact_match(prediction, target_sql)
 

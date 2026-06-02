@@ -5,8 +5,8 @@ Contains:
   - Schema extraction from Spider dataset
   - Schema serialization (3 formats: plain text, CREATE TABLE, compact)
   - Zero-shot and few-shot prompt builders
-  - SQL normalization and exact match calculation
-    - OpenRouter API wrapper for LLM inference
+    - SQL normalization and exact match calculation
+        - Mistral API wrapper for LLM inference
 """
 
 import os
@@ -368,17 +368,45 @@ Important: Return ONLY the SQL query, nothing else. Do not include explanations,
 
 # Varsayılan few-shot örnekleri (Spider verisetinden seçilmiş basit örnekler)
 DEFAULT_FEW_SHOT_EXAMPLES = [
+    # 1. Simple aggregate with COUNT
     {
-        "question": "How many departments are there?",
-        "sql": "SELECT COUNT(*) FROM department"
+        "question": "How many records are in the table?",
+        "sql": "SELECT COUNT(*) FROM table"
     },
+    # 2. WHERE clause with multiple conditions and ORDER BY
     {
-        "question": "What are the names of all students older than 20?",
-        "sql": "SELECT name FROM students WHERE age > 20"
+        "question": "List names and ages of people older than 20, ordered by age descending",
+        "sql": "SELECT name, age FROM person WHERE age > 20 ORDER BY age DESC"
     },
+    # 3. JOIN between two tables
     {
-        "question": "Show the name and budget of departments with more than 100 employees, ordered by budget.",
-        "sql": "SELECT name, budget FROM department WHERE num_employees > 100 ORDER BY budget DESC"
+        "question": "Show names of people with their department names",
+        "sql": "SELECT person.name, department.name FROM person JOIN department ON person.dept_id = department.id"
+    },
+    # 4. GROUP BY with aggregate function and HAVING
+    {
+        "question": "Find departments with more than 5 employees",
+        "sql": "SELECT department, COUNT(*) as emp_count FROM employee GROUP BY department HAVING COUNT(*) > 5"
+    },
+    # 5. Subquery in WHERE clause
+    {
+        "question": "Find people whose age is above the average age",
+        "sql": "SELECT name, age FROM person WHERE age > (SELECT AVG(age) FROM person)"
+    },
+    # 6. DISTINCT clause
+    {
+        "question": "What are all different countries in the dataset?",
+        "sql": "SELECT DISTINCT country FROM person"
+    },
+    # 7. BETWEEN operator
+    {
+        "question": "Find records with values between 100 and 200",
+        "sql": "SELECT id, value FROM record WHERE value BETWEEN 100 AND 200"
+    },
+    # 8. IN clause with multiple values
+    {
+        "question": "Show all employees from departments A, B, or C",
+        "sql": "SELECT name, department FROM employee WHERE department IN ('A', 'B', 'C')"
     },
 ]
 
@@ -390,7 +418,7 @@ DEFAULT_FEW_SHOT_EXAMPLES = [
 def normalize_sql(sql):
     """
     SQL sorgusunu normalize eder: küçük harf, fazla boşluk temizleme,
-    noktalı virgül kaldırma.
+    noktalı virgül kaldırma, AS clause'ları kaldırma.
 
     Args:
         sql (str): Normalize edilecek SQL sorgusu
@@ -406,6 +434,18 @@ def normalize_sql(sql):
     sql = re.sub(r"^```(sql)?", "", sql)
     sql = re.sub(r"```$", "", sql)
     sql = sql.strip()
+    
+    # AS clause'ları ve alias'ları kaldır
+    # Örneğin: "SELECT COUNT(*) AS total_singers" → "SELECT COUNT(*)"
+    sql = re.sub(r"\s+as\s+\w+", "", sql)
+    
+    # Parantez İÇİndeki boşlukları kaldır (ama dış boşlukları koru)
+    sql = re.sub(r"\(\s+", "(", sql)  # "( " → "("
+    sql = re.sub(r"\s+\)", ")", sql)  # " )" → ")"
+    
+    # Virgül çevresindeki boşlukları normalize et
+    sql = re.sub(r"\s*,\s*", ", ", sql)
+    
     # Fazla boşlukları tek boşluğa indir
     sql = re.sub(r"\s+", " ", sql)
     return sql
@@ -428,40 +468,29 @@ def calculate_exact_match(prediction, target):
 
 
 # =============================================================================
-#  5. OPENROUTER API WRAPPER
+#  5. MISTRAL API WRAPPER
 # =============================================================================
 
-def get_openrouter_client():
+def get_mistral_client():
     """
-    OpenRouter API istemcisi oluşturur.
+    Mistral API istemcisi oluşturur.
 
     Returns:
-        OpenAI: OpenRouter uyumlu istemci
+        OpenAI: Mistral uyumlu OpenAI client
     """
-    api_key = os.environ.get("OPENROUTER_API_KEY")
-    base_url = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
-
-    extra_headers = {}
-    http_referer = os.environ.get("OPENROUTER_HTTP_REFERER")
-    app_name = os.environ.get("OPENROUTER_APP_NAME")
-    if http_referer:
-        extra_headers["HTTP-Referer"] = http_referer
-    if app_name:
-        extra_headers["X-Title"] = app_name
-
-    if extra_headers:
-        return OpenAI(api_key=api_key, base_url=base_url, default_headers=extra_headers)
+    api_key = os.environ.get("MISTRAL_API_KEY") or os.environ.get("MISTRALAI_API_KEY")
+    base_url = os.environ.get("MISTRAL_BASE_URL", "https://api.mistral.ai/v1")
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
-def get_sql_prediction(client, prompt, model_name="nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", max_retries=3, retry_delay=2):
+def get_sql_prediction(client, prompt, model_name="mistral-small-latest", max_retries=3, retry_delay=2):
     """
-    OpenRouter API ile SQL tahmini alır. Rate limit hatalarında retry yapar.
+    Mistral API ile SQL tahmini alır. Rate limit hatalarında retry yapar.
 
     Args:
-        client: OpenRouter uyumlu istemci nesnesi
+        client: Mistral uyumlu istemci nesnesi
         prompt (str): LLM'e gönderilecek prompt
-            model_name (str): Kullanılacak OpenRouter model adı (varsayılan: inclusionai/ring-2.6-1t:free)
+            model_name (str): Kullanılacak Mistral model adı (varsayılan: mistral-small-latest)
         max_retries (int): Maksimum deneme sayısı
         retry_delay (int): Denemeler arası bekleme süresi (saniye)
 
