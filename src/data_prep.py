@@ -156,7 +156,44 @@ def main():
         json.dump(stats, f, indent=2, ensure_ascii=False)
     print(f"\n  Veri seti istatistikleri kaydedildi: {stats_path}")
 
+    # Eğitim verisini JSONL olarak hazırla
+    create_instruction_dataset(dataset)
+
     return dataset
+
+def create_instruction_dataset(dataset, output_path="data/train_formatted.jsonl"):
+    """
+    Spider eğitim verisini LLM fine-tuning işlemi için Alpaca formatında (JSONL) hazırlar.
+    """
+    print("\n" + "=" * 60)
+    print("ADIM 6: Eğitim Verisini Formatlama (Instruction Tuning için)")
+    print("=" * 60)
+    
+    formatted_data = []
+    
+    # Sadece train setini formatlıyoruz (Modelin cevapları ezberlememesi için)
+    print("  Eğitim örnekleri Alpaca formatına dönüştürülüyor...")
+    for sample in dataset["train"]:
+        # utils.py'deki kusursuz şema çıkarıcıyı kullanıyoruz
+        schema_info = extract_schema_from_sample(sample)
+        # LLM'lerin en iyi anladığı şema yapısı Format B (CREATE TABLE) olduğu için onu seçiyoruz
+        schema_text = serialize_schema_format_b(schema_info)
+        
+        # Alpaca formatında JSON satırı oluşturuyoruz
+        formatted_line = {
+            "instruction": "You are an expert SQL developer. Your task is to translate the given natural language question into a valid executable SQL query.",
+            "input": f"Database: {sample['db_id']}\nSchema:\n{schema_text}\n\nQuestion: {sample['question']}",
+            "output": sample["query"]
+        }
+        formatted_data.append(formatted_line)
+    
+    # JSONL olarak dosyaya kaydet
+    with open(output_path, "w", encoding="utf-8") as f:
+        for item in formatted_data:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+            
+    print(f"  ✅ [Başarılı] Toplam {len(formatted_data)} eğitim örneği formatlandı.")
+    print(f"  📂 [Kaydedildi] Dosya yolu: {output_path}")
 
 
 if __name__ == "__main__":
