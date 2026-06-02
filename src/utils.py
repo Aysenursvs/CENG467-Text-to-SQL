@@ -18,6 +18,8 @@ from io import BytesIO
 import requests
 from dotenv import load_dotenv
 from openai import OpenAI
+import urllib.request
+import json
 
 # ─── Load environment variables ─────────────────────────────────────────────
 load_dotenv()
@@ -37,48 +39,50 @@ load_dotenv()
 _SCHEMA_CACHE = {}
 
 
-def _download_tables_json(tables_json_path):
-    """
-    Spider schema dosyasını indirmeyi dener.
+# def _download_tables_json(tables_json_path):
+#     """
+#     Spider schema dosyasını indirmeyi dener.
 
-    Önce doğrudan tables.json URL'lerini dener, sonra resmi Spider dataset
-    zip arşivinden tables.json'u çıkarır.
-    """
-    candidate_urls = [
-        os.environ.get("SPIDER_TABLES_JSON_URL"),
-        "https://raw.githubusercontent.com/taoyds/spider/master/tables.json",
-        "https://raw.githubusercontent.com/taoyds/spider/main/tables.json",
-    ]
+#     Önce doğrudan tables.json URL'lerini dener, sonra resmi Spider dataset
+#     zip arşivinden tables.json'u çıkarır.
+#     """
+#     candidate_urls = [
+#         os.environ.get("SPIDER_TABLES_JSON_URL"),
+#         "https://raw.githubusercontent.com/taoyds/spider/master/tables.json",
+#         "https://raw.githubusercontent.com/taoyds/spider/main/tables.json",
+#     ]
 
-    for url in candidate_urls:
-        if not url:
-            continue
-        try:
-            response = requests.get(url, timeout=30)
-            response.raise_for_status()
-            with open(tables_json_path, "w", encoding="utf-8") as f:
-                f.write(response.text)
-            return
-        except Exception:
-            continue
+#     for url in candidate_urls:
+#         if not url:
+#             continue
+#         try:
+#             response = requests.get(url, timeout=30)
+#             response.raise_for_status()
+#             with open(tables_json_path, "w", encoding="utf-8") as f:
+#                 f.write(response.text)
+#             return
+#         except Exception:
+#             continue
 
-    spider_zip_url = "https://drive.google.com/uc?export=download&id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J"
-    response = requests.get(spider_zip_url, timeout=120, stream=True)
-    response.raise_for_status()
+#     spider_zip_url = "https://drive.google.com/uc?export=download&id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J"
+#     response = requests.get(spider_zip_url, timeout=120, stream=True)
+#     response.raise_for_status()
 
-    with zipfile.ZipFile(BytesIO(response.content)) as archive:
-        tables_member = None
-        for member_name in archive.namelist():
-            if member_name.endswith("tables.json"):
-                tables_member = member_name
-                break
+#     with zipfile.ZipFile(BytesIO(response.content)) as archive:
+#         tables_member = None
+#         for member_name in archive.namelist():
+#             if member_name.endswith("tables.json"):
+#                 tables_member = member_name
+#                 break
 
-        if not tables_member:
-            raise RuntimeError("Spider arşivi içinde tables.json bulunamadı.")
+#         if not tables_member:
+#             raise RuntimeError("Spider arşivi içinde tables.json bulunamadı.")
 
-        with archive.open(tables_member) as source, open(tables_json_path, "wb") as target:
-            target.write(source.read())
+#         with archive.open(tables_member) as source, open(tables_json_path, "wb") as target:
+#             target.write(source.read())
 
+
+import json
 
 def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
     global _SCHEMA_CACHE
@@ -86,18 +90,13 @@ def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
     if _SCHEMA_CACHE:
         return _SCHEMA_CACHE
 
-    # Dosya yoksa doğrudan raw linkten indir (Zip ile uğraşmadan)
+    # Dosyanın var olup olmadığını kontrol et
     if not os.path.exists(tables_json_path):
-        os.makedirs(os.path.dirname(tables_json_path) or ".", exist_ok=True)
-        print(f"  [Schema Extractor] {tables_json_path} bulunamadı.")
-        print(f"  [Schema Extractor] Orijinal tables.json GitHub'dan raw olarak indiriliyor...")
-        url = "https://raw.githubusercontent.com/taoyds/spider/master/tables.json"
-        
-        try:
-            urllib.request.urlretrieve(url, tables_json_path)
-            print("  [Schema Extractor] İndirme başarılı!")
-        except Exception as e:
-            raise RuntimeError(f"tables.json indirilemedi: {e}")
+        raise FileNotFoundError(
+            f"\n[KRITIK HATA] {tables_json_path} dosyasi bulunamadi!\n"
+            "Lütfen Spider dataset'inin icindeki orijinal 'tables.json' dosyasini "
+            "indirip projenin 'data/' klasorune manuel olarak kopyalayin."
+        )
 
     # JSON dosyasını oku ve parse et
     with open(tables_json_path, "r", encoding="utf-8") as f:
