@@ -15,11 +15,10 @@ from datasets import load_dataset
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
-    TrainingArguments,
+    BitsAndBytesConfig
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from trl import SFTTrainer
+from trl import SFTTrainer, SFTConfig
 
 # ─── 1. AYARLAR VE YAPILANDIRMA ──────────────────────────────────────────────
 # Modeli değiştirmek isterseniz burayı güncelleyebilirsiniz (Örn: meta-llama/Meta-Llama-3-8B)
@@ -84,17 +83,18 @@ def main():
 
     # ─── 5. EĞİTİM ARGÜMANLARI (TRAINING ARGS) ────────────────────────────────
     print("\n[4/5] Eğitim parametreleri ayarlanıyor...")
-    training_args = TrainingArguments(
+    training_args = SFTConfig(               # <-- TrainingArguments yerine SFTConfig oldu
         output_dir=OUTPUT_DIR,
-        per_device_train_batch_size=4,       # GPU belleğine göre düşürülebilir (2 veya 1)
-        gradient_accumulation_steps=4,       # Sanal batch size oluşturur (4x4=16)
-        learning_rate=2e-4,                  # Öğrenme hızı
-        logging_steps=10,                    # Her 10 adımda bir log bas
-        max_steps=200,                       # Demo amaçlı 200 adım. Finalde epoch bazlı (örn 1-2 epoch) eğitilecek.
+        per_device_train_batch_size=4,       
+        gradient_accumulation_steps=4,       
+        learning_rate=2e-4,                  
+        logging_steps=10,                    
+        max_steps=200,                       
         optim="paged_adamw_8bit",
-        fp16=True,                           # Hızlı eğitim için
+        fp16=True,                           
         save_strategy="steps",
         save_steps=50,
+        max_seq_length=1024,                 # <-- max_seq_length buraya taşındı!
     )
 
     # ─── 6. SFT TRAINER İLE EĞİTİMİ BAŞLATMA ──────────────────────────────────
@@ -103,10 +103,10 @@ def main():
         model=model,
         train_dataset=dataset["train"],
         peft_config=peft_config,
-        max_seq_length=1024,                 # Promptların maksimum uzunluğu
         tokenizer=tokenizer,
         args=training_args,
         formatting_func=formatting_prompts_func,
+        # max_seq_length buradan silindi
     )
 
     print("\n🔥 Eğitim başlatılıyor! (Bu işlem donanıma göre saatler sürebilir)...\n")
