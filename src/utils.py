@@ -81,38 +81,23 @@ def _download_tables_json(tables_json_path):
 
 
 def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
-    """
-    Spider'ın orijinal tables.json dosyasını okuyarak her db_id için
-    kusursuz bir şema sözlüğü oluşturur (PK ve FK dahil).
-    Eğer dosya yoksa Spider'ın resmi GitHub reposundan otomatik indirir.
-
-    Args:
-        dataset: (Geriye dönük uyumluluk için bırakıldı)
-        tables_json_path: tables.json dosyasının kaydedileceği/okunacağı yol
-
-    Returns:
-        dict: {db_id: {"tables": [{"name": str, "columns": [str]}], ...}}
-    """
     global _SCHEMA_CACHE
 
     if _SCHEMA_CACHE:
         return _SCHEMA_CACHE
 
-    # Dosya yoksa internetten indir
+    # Dosya yoksa doğrudan raw linkten indir (Zip ile uğraşmadan)
     if not os.path.exists(tables_json_path):
         os.makedirs(os.path.dirname(tables_json_path) or ".", exist_ok=True)
         print(f"  [Schema Extractor] {tables_json_path} bulunamadı.")
-        print(f"  [Schema Extractor] Spider schema dosyası indiriliyor...")
-
+        print(f"  [Schema Extractor] Orijinal tables.json GitHub'dan raw olarak indiriliyor...")
+        url = "https://raw.githubusercontent.com/taoyds/spider/master/tables.json"
+        
         try:
-            _download_tables_json(tables_json_path)
+            urllib.request.urlretrieve(url, tables_json_path)
             print("  [Schema Extractor] İndirme başarılı!")
         except Exception as e:
-            raise RuntimeError(
-                "tables.json indirilemedi. Spider verisinin tam sürümünü "
-                "indirip data/tables.json olarak yerleştirmeniz gerekiyor. "
-                f"Ayrıntı: {e}"
-            )
+            raise RuntimeError(f"tables.json indirilemedi: {e}")
 
     # JSON dosyasını oku ve parse et
     with open(tables_json_path, "r", encoding="utf-8") as f:
@@ -125,32 +110,22 @@ def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
         primary_keys_idx = db.get("primary_keys", [])
         foreign_keys_idx = db.get("foreign_keys", [])
 
-        # 1. Tablo iskeletlerini oluştur
         tables_list = [{"name": t, "columns": []} for t in table_names]
-
-        # 2. Kolonları tablolara yerleştir
-        # Spider veri formatında column_names şöyledir: [[tablo_indexi, "kolon_adi"], ...]
-        # Index 0 genellikle [-1, "*"] olur (tüm tablolar için joker kolon), bunu atlıyoruz.
-        col_full_names = {}  # index -> "tablo_adi.kolon_adi"
+        col_full_names = {}
 
         for idx, (tbl_idx, col_name) in enumerate(column_names):
             if tbl_idx == -1:
-                continue  # "*" kolonunu yoksay
-            
+                continue 
             table_name = table_names[tbl_idx]
             tables_list[tbl_idx]["columns"].append(col_name)
             col_full_names[idx] = f"{table_name}.{col_name}"
 
-        # 3. Primary Key'leri metne çevir (Örn: "department.Department_ID")
         pk_list = [col_full_names[idx] for idx in primary_keys_idx if idx in col_full_names]
-
-        # 4. Foreign Key'leri metne çevir (Örn: ["management.head_ID", "head.head_ID"])
         fk_list = []
         for fk_idx, pk_idx in foreign_keys_idx:
             if fk_idx in col_full_names and pk_idx in col_full_names:
                 fk_list.append((col_full_names[fk_idx], col_full_names[pk_idx]))
 
-        # Cache'e kaydet
         _SCHEMA_CACHE[db_id] = {
             "db_id": db_id,
             "tables": tables_list,
