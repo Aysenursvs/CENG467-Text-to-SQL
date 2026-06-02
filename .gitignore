@@ -9,3 +9,11 @@ __pycache__/
 *.aux
 *.log
 *.vscode
+
+# Veri setleri ve veritabanları
+data/database/
+data/train_formatted.jsonl
+
+# Model ağırlıkları ve adaptörler
+models/
+lora_model.zip
