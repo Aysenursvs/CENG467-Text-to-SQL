@@ -14,7 +14,7 @@ from utils import extract_schema_from_sample, serialize_schema_format_b, normali
 
 # --- AYARLAR ---
 BASE_MODEL = "mistralai/Mistral-7B-v0.1"
-LORA_MODEL_DIR = "/content/drive/MyDrive/sql-mistral-lora/checkpoint-150"
+LORA_MODEL_DIR = "/content/drive/MyDrive/sql-mistral-lora/checkpoint-175"
 DB_DIR = "data/database"
 
 
