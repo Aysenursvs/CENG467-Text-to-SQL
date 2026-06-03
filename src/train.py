@@ -103,7 +103,7 @@ def main():
         num_train_epochs=2,                  # Full epoch-based training
         optim="paged_adamw_8bit",
         fp16=True,                           # Hızlı eğitim için
-        evaluation_strategy="steps",
+        eval_strategy="steps",
         eval_steps=50,
         save_strategy="steps",
         save_steps=50,
