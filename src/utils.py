@@ -110,19 +110,18 @@ def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
         foreign_keys_idx = db.get("foreign_keys", [])
         column_types = db.get("column_types", [])
 
-
-        col_type = column_types[idx] if idx < len(column_types) else "text"
-        tables_list[tbl_idx]["columns"].append({
-            "name": col_name,
-            "type": col_type
-        })
+        tables_list = [{"name": t, "columns": []} for t in table_names]
         col_full_names = {}
 
         for idx, (tbl_idx, col_name) in enumerate(column_names):
             if tbl_idx == -1:
                 continue 
             table_name = table_names[tbl_idx]
-            tables_list[tbl_idx]["columns"].append(col_name)
+            col_type = column_types[idx] if idx < len(column_types) else "text"
+            tables_list[tbl_idx]["columns"].append({
+                "name": col_name,
+                "type": col_type,
+            })
             col_full_names[idx] = f"{table_name}.{col_name}"
 
         pk_list = [col_full_names[idx] for idx in primary_keys_idx if idx in col_full_names]
