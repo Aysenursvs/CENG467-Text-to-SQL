@@ -33,7 +33,11 @@ def formatting_prompts_func(example):
     """
     output_texts = []
     for i in range(len(example['instruction'])):
-        text = f"### Instruction:\n{example['instruction'][i]}\n\n### Input:\n{example['input'][i]}\n\n### Response:\n{example['output'][i]}"
+        text = (
+            f"### Instruction:\n{example['instruction'][i]}\n\n"
+            f"### Input:\n{example['input'][i]}\n\n"
+            f"### Response:\n{example['output'][i]}</s>"
+        )
         output_texts.append(text)
     return output_texts
 
@@ -45,6 +49,10 @@ def main():
     # ─── 2. VERİ SETİNİ YÜKLEME ───────────────────────────────────────────────
     print(f"\n[1/5] Eğitim verisi yükleniyor: {DATASET_PATH}")
     dataset = load_dataset("json", data_files={"train": DATASET_PATH})
+    split_dataset = dataset["train"].train_test_split(test_size=0.05, seed=42)
+    train_dataset = split_dataset["train"]
+    eval_dataset = split_dataset["test"]
+    print(f"  Train examples: {len(train_dataset)} | Eval examples: {len(eval_dataset)}")
 
     # ─── 3. MODEL VE TOKENIZER YÜKLEME (4-BIT QUANTIZATION) ───────────────────
     print(f"\n[2/5] Tokenizer ve Model ({MODEL_NAME}) 4-bit olarak yükleniyor...")
@@ -93,9 +101,11 @@ def main():
         gradient_accumulation_steps=4,       # Sanal batch size oluşturur (4x4=16)
         learning_rate=2e-4,                  # Öğrenme hızı
         logging_steps=10,                    # Her 10 adımda bir log bas
-        num_train_epochs=2,                       # Demo amaçlı 200 adım. Finalde epoch bazlı (örn 1-2 epoch) eğitilecek.
+        num_train_epochs=2,                  # Full epoch-based training
         optim="paged_adamw_8bit",
         fp16=True,                           # Hızlı eğitim için
+        evaluation_strategy="steps",
+        eval_steps=50,
         save_strategy="steps",
         save_steps=50,
     )
@@ -104,7 +114,8 @@ def main():
     print("\n[5/5] SFTTrainer başlatılıyor...")
     trainer = SFTTrainer(
         model=model,
-        train_dataset=dataset["train"],
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
         peft_config=peft_config,
         max_seq_length=1024,                 # Promptların maksimum uzunluğu
         tokenizer=tokenizer,
