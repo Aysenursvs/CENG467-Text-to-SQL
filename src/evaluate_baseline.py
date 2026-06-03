@@ -1,6 +1,6 @@
 """
 evaluate_baseline.py — Baseline evaluation pipeline for Text-to-SQL.
-Güncelleme: Execution Accuracy (EX) metriği eklendi!
+Güncelleme: Execution Accuracy (EX) + Precision, Recall, F1 Metrikleri Eklendi!
 """
 
 import os
@@ -47,6 +47,26 @@ def execute_sql(db_id, sql_query):
     except Exception as e:
         return f"SQL_HATA: {e}"
 
+def calculate_set_metrics(gold_set, pred_set):
+    """Hedef tablo ile modelin ürettiği tabloyu kesiştirerek IR metriklerini hesaplar."""
+    # Eğer sorgulardan biri hata verdiyse ve küme (set) dönmediyse skorlar 0'dır
+    if not isinstance(gold_set, set) or not isinstance(pred_set, set):
+        return 0.0, 0.0, 0.0
+    
+    len_intersection = len(gold_set.intersection(pred_set))
+    len_gold = len(gold_set)
+    len_pred = len(pred_set)
+
+    # İki sorgu da boş sonuç döndürdüyse (örn: tabloda gerçekten o veri yoksa) bu bir başarıdır
+    if len_gold == 0 and len_pred == 0:
+        return 1.0, 1.0, 1.0
+    
+    precision = len_intersection / len_pred if len_pred > 0 else 0.0
+    recall = len_intersection / len_gold if len_gold > 0 else 0.0
+    f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+
+    return precision, recall, f1
+
 
 def evaluate_baseline(
     dataset,
@@ -65,13 +85,19 @@ def evaluate_baseline(
     em_correct = 0
     exec_correct = 0
     exec_total = 0
+    
+    # Yeni metrikler için toplam sayaçlar
+    sum_precision = 0.0
+    sum_recall = 0.0
+    sum_f1 = 0.0
+    
     predictions = []
     errors = []
 
-    print(f"\n{'='*60}")
+    print(f"\n{'='*70}")
     print(f"Baseline: {baseline_type.upper()} | Schema: {schema_format}")
     print(f"Örnekler: {eval_samples}")
-    print(f"{'='*60}")
+    print(f"{'='*70}")
 
     for i in range(eval_samples):
         sample = val_data[i]
@@ -92,15 +118,21 @@ def evaluate_baseline(
 
         prediction = get_sql_prediction(client, prompt, model_name=model_name)
 
-        # 1. Exact Match (Birebir Eşleşme)
+        # 1. Exact Match
         em = calculate_exact_match(prediction, target_sql)
         em_correct += em
 
-        # 2. Execution Accuracy (Çalıştırma Doğruluğu)
+        # 2. Execution & Set Metrics
         gold_result = execute_sql(db_id, target_sql)
         pred_result = execute_sql(db_id, prediction)
         
         ex_match = 0
+        p, r, f1 = calculate_set_metrics(gold_result, pred_result)
+        
+        sum_precision += p
+        sum_recall += r
+        sum_f1 += f1
+        
         if "HATA" not in str(gold_result) and "HATA" not in str(pred_result) and gold_result != "DB_NOT_FOUND" and pred_result != "DB_NOT_FOUND":
             exec_total += 1
             if gold_result == pred_result:
@@ -114,7 +146,10 @@ def evaluate_baseline(
             "target_sql": target_sql,
             "predicted_sql": prediction,
             "exact_match": em,
-            "exec_match": ex_match
+            "exec_match": ex_match,
+            "precision": round(p, 4),
+            "recall": round(r, 4),
+            "f1": round(f1, 4)
         }
         predictions.append(pred_record)
 
@@ -125,17 +160,25 @@ def evaluate_baseline(
         ex_cumulative = (exec_correct / exec_total) * 100 if exec_total > 0 else 0
         
         status = "✅" if ex_match == 1 else "❌"
-        print(f"  [{i+1:3d}/{eval_samples}] {status} EM={em_cumulative:.1f}% | EX={ex_cumulative:.1f}% | DB: {db_id}")
+        print(f"  [{i+1:3d}/{eval_samples}] {status} EM={em_cumulative:.1f}% | EX={ex_cumulative:.1f}% | F1={f1:.2f} | DB: {db_id}")
 
         if i < eval_samples - 1:
             time.sleep(delay_between_requests)
 
     em_score = (em_correct / eval_samples) * 100 if eval_samples > 0 else 0
     ex_score = (exec_correct / exec_total) * 100 if exec_total > 0 else 0
+    
+    # Ortalama IR Metrikleri
+    avg_precision = (sum_precision / eval_samples) * 100
+    avg_recall = (sum_recall / eval_samples) * 100
+    avg_f1 = (sum_f1 / eval_samples) * 100
 
     print(f"\n--- SONUÇ: {baseline_type.upper()} ({schema_format}) ---")
     print(f"  Exact Match: {em_correct}/{eval_samples} = {em_score:.2f}%")
     print(f"  Execution Accuracy: {exec_correct}/{exec_total} = {ex_score:.2f}%")
+    print(f"  Avg Precision: {avg_precision:.2f}%")
+    print(f"  Avg Recall:    {avg_recall:.2f}%")
+    print(f"  Avg F1-Score:  {avg_f1:.2f}%")
 
     return {
         "baseline_type": baseline_type,
@@ -147,6 +190,9 @@ def evaluate_baseline(
         "exec_total": exec_total,
         "em_score": em_score,
         "ex_score": ex_score,
+        "avg_precision": avg_precision,
+        "avg_recall": avg_recall,
+        "avg_f1": avg_f1,
         "predictions": predictions,
         "error_examples": errors[:10],
         "timestamp": datetime.now().isoformat(),
@@ -154,9 +200,9 @@ def evaluate_baseline(
 
 
 def run_full_evaluation(args):
-    print("=" * 60)
-    print("SPIDER VALIDATION SET — BASELINE EVALUATION (WITH EXECUTION)")
-    print("=" * 60)
+    print("=" * 70)
+    print("SPIDER VALIDATION SET — BASELINE EVALUATION (WITH EXEC & F1 METRICS)")
+    print("=" * 70)
 
     print("\nSpider veriseti yükleniyor...")
     dataset = load_dataset("xlangai/spider")
@@ -167,40 +213,32 @@ def run_full_evaluation(args):
     all_results = {}
     summary = {}
 
-    print("\n\n" + "#" * 60)
+    print("\n\n" + "#" * 70)
     print("# BASELINE 1: ZERO-SHOT PROMPTING")
-    print("#" * 60)
+    print("#" * 70)
 
     zs_results = evaluate_baseline(
         dataset, client, args.model, "zero_shot", args.schema_format,
         args.num_samples, args.delay
     )
     all_results["zero_shot"] = zs_results
-    summary["Zero-shot Prompting"] = {
-        "em_score": zs_results["em_score"],
-        "ex_score": zs_results["ex_score"],
-    }
 
-    print("\n\n" + "#" * 60)
+    print("\n\n" + "#" * 70)
     print("# BASELINE 2: FEW-SHOT PROMPTING (3-shot)")
-    print("#" * 60)
+    print("#" * 70)
 
     fs_results = evaluate_baseline(
         dataset, client, args.model, "few_shot", args.schema_format,
         args.num_samples, args.delay
     )
     all_results["few_shot"] = fs_results
-    summary["Few-shot Prompting (3-shot)"] = {
-        "em_score": fs_results["em_score"],
-        "ex_score": fs_results["ex_score"],
-    }
 
     results_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results"
     )
     os.makedirs(results_dir, exist_ok=True)
 
-    results_path = os.path.join(results_dir, "baseline_results_with_exec.json")
+    results_path = os.path.join(results_dir, "baseline_results_with_f1.json")
     save_data = {
         "experiment_config": {
             "model": args.model,
@@ -212,14 +250,16 @@ def run_full_evaluation(args):
             "zero_shot": {
                 "em_score": zs_results["em_score"],
                 "ex_score": zs_results["ex_score"],
-                "exec_correct": zs_results["exec_correct"],
-                "exec_total": zs_results["exec_total"],
+                "precision": zs_results["avg_precision"],
+                "recall": zs_results["avg_recall"],
+                "f1_score": zs_results["avg_f1"],
             },
             "few_shot": {
                 "em_score": fs_results["em_score"],
                 "ex_score": fs_results["ex_score"],
-                "exec_correct": fs_results["exec_correct"],
-                "exec_total": fs_results["exec_total"],
+                "precision": fs_results["avg_precision"],
+                "recall": fs_results["avg_recall"],
+                "f1_score": fs_results["avg_f1"],
             },
         }
     }
@@ -227,13 +267,13 @@ def run_full_evaluation(args):
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(save_data, f, indent=2, ensure_ascii=False)
     
-    print("\n" + "=" * 60)
-    print("🏆 FİNAL BASELINE RAPORU")
-    print("=" * 60)
-    print(f"Zero-Shot -> EM: %{zs_results['em_score']:.2f} | EX: %{zs_results['ex_score']:.2f}")
-    print(f"Few-Shot  -> EM: %{fs_results['em_score']:.2f} | EX: %{fs_results['ex_score']:.2f}")
-    print("=" * 60)
-    print(f"Detaylı sonuçlar kaydedildi: {results_path}")
+    print("\n" + "=" * 70)
+    print("🏆 FİNAL BASELINE RAPORU (ZENGİNLEŞTİRİLMİŞ METRİKLER)")
+    print("=" * 70)
+    print(f"ZERO-SHOT -> EM: %{zs_results['em_score']:.2f} | EX: %{zs_results['ex_score']:.2f} | P: %{zs_results['avg_precision']:.2f} | R: %{zs_results['avg_recall']:.2f} | F1: %{zs_results['avg_f1']:.2f}")
+    print(f"FEW-SHOT  -> EM: %{fs_results['em_score']:.2f} | EX: %{fs_results['ex_score']:.2f} | P: %{fs_results['avg_precision']:.2f} | R: %{fs_results['avg_recall']:.2f} | F1: %{fs_results['avg_f1']:.2f}")
+    print("=" * 70)
+    print(f"Detaylı sonuçlar JSON formatında kaydedildi: {results_path}")
 
 
 def main():
