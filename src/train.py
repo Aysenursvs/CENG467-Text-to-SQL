@@ -16,10 +16,9 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     BitsAndBytesConfig,
-    TrainingArguments,
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
-from trl import SFTTrainer
+from trl import SFTConfig, SFTTrainer
 
 # ─── 1. AYARLAR VE YAPILANDIRMA ──────────────────────────────────────────────
 # Modeli değiştirmek isterseniz burayı güncelleyebilirsiniz (Örn: meta-llama/Meta-Llama-3-8B)
@@ -95,7 +94,7 @@ def main():
 
     # ─── 5. EĞİTİM ARGÜMANLARI (TRAINING ARGS) ────────────────────────────────
     print("\n[4/5] Eğitim parametreleri ayarlanıyor...")
-    training_args = TrainingArguments(
+    training_args = SFTConfig(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=4,       # GPU belleğine göre düşürülebilir (2 veya 1)
         gradient_accumulation_steps=4,       # Sanal batch size oluşturur (4x4=16)
@@ -108,6 +107,7 @@ def main():
         eval_steps=50,
         save_strategy="steps",
         save_steps=50,
+        max_length=1024,
     )
 
     # ─── 6. SFT TRAINER İLE EĞİTİMİ BAŞLATMA ──────────────────────────────────
@@ -117,8 +117,7 @@ def main():
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
         peft_config=peft_config,
-        max_seq_length=1024,                 # Promptların maksimum uzunluğu
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=training_args,
         formatting_func=formatting_prompts_func,
     )
