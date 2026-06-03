@@ -65,7 +65,13 @@ def main():
     question = "How many departments are there?"
     hedef_sql = "SELECT count(*) FROM department"
     
-    prompt = f"Sen bir SQL uzmanısın. Aşağıdaki tablo şemasına bakarak sorulan soruyu cevaplayan SQL sorgusunu yaz.\n\nŞema: {schema}\nSoru: {question}\nCevap:"
+    prompt = (
+        "### Instruction:\n"
+        "You are an expert SQL developer. Your task is to translate the given natural language question into a valid executable SQL query.\n\n"
+        "### Input:\n"
+        f"Database: {test_db}\nSchema:\n{schema}\n\nQuestion: {question}\n\n"
+        "### Response:\n"
+    )
     
     # Soruyu ekran kartına (cuda) gönderiyoruz
     inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
@@ -77,7 +83,7 @@ def main():
     uretilen_metin = tokenizer.decode(outputs[0], skip_special_tokens=True)
     
     # Modelin cevabından sadece SQL'i çekiyoruz
-    uretilen_sql = uretilen_metin.split("Cevap:")[-1].split(";")[0].strip()
+    uretilen_sql = uretilen_metin.split("### Response:")[-1].split(";")[0].strip()
     
     print("-" * 60)
     print(f"🎯 Beklenen Hedef SQL : {hedef_sql}")

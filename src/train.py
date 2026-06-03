@@ -90,7 +90,7 @@ def main():
         gradient_accumulation_steps=4,       # Sanal batch size oluşturur (4x4=16)
         learning_rate=2e-4,                  # Öğrenme hızı
         logging_steps=10,                    # Her 10 adımda bir log bas
-        max_steps=200,                       # Demo amaçlı 200 adım. Finalde epoch bazlı (örn 1-2 epoch) eğitilecek.
+        num_train_epochs=2,                       # Demo amaçlı 200 adım. Finalde epoch bazlı (örn 1-2 epoch) eğitilecek.
         optim="paged_adamw_8bit",
         fp16=True,                           # Hızlı eğitim için
         save_strategy="steps",
