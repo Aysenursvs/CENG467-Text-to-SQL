@@ -30,14 +30,21 @@ def formatting_prompts_func(example):
     """
     Alpaca formatındaki veriyi modelin eğitim sırasında okuyacağı tekil bir metne çevirir.
     """
-    output_texts = []
-    for i in range(len(example['instruction'])):
-        text = (
-            f"### Instruction:\n{example['instruction'][i]}\n\n"
-            f"### Input:\n{example['input'][i]}\n\n"
-            f"### Response:\n{example['output'][i]}</s>"
+    def format_one(instruction, input_text, output_text):
+        return (
+            f"### Instruction:\n{instruction}\n\n"
+            f"### Input:\n{input_text}\n\n"
+            f"### Response:\n{output_text}</s>"
         )
-        output_texts.append(text)
+
+    if isinstance(example["instruction"], str):
+        return format_one(example["instruction"], example["input"], example["output"])
+
+    output_texts = []
+    for i in range(len(example["instruction"])):
+        output_texts.append(
+            format_one(example["instruction"][i], example["input"][i], example["output"][i])
+        )
     return output_texts
 
 def main():
