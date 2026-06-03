@@ -132,7 +132,7 @@ def main():
     )
 
     print("\n🔥 Eğitim başlatılıyor! (Bu işlem donanıma göre saatler sürebilir)...\n")
-    trainer.train()
+    trainer.train(resume_from_checkpoint="/content/drive/MyDrive/sql-mistral-lora/checkpoint-75")
 
     # ─── 7. MODELİ KAYDETME ───────────────────────────────────────────────────
     print(f"\n✅ Eğitim tamamlandı! Adaptörler '{OUTPUT_DIR}' klasörüne kaydediliyor...")
