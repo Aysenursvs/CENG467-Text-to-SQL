@@ -110,7 +110,7 @@ def main():
         logging_steps=10,                    # Her 10 adımda bir log bas
         num_train_epochs=2,                  # Full epoch-based training
         optim="paged_adamw_8bit",
-        fp16=True,
+        fp16=False,
         bf16=False,                          # Hızlı eğitim için
         eval_strategy="steps",
         eval_steps=50,
