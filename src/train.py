@@ -79,7 +79,10 @@ def main():
         r=8,
         bias="none",
         task_type="CAUSAL_LM",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"] 
+        target_modules=[
+        "q_proj", "k_proj", "v_proj", "o_proj",
+        "gate_proj", "up_proj", "down_proj"
+        ] 
     )
 
     # ─── 5. EĞİTİM ARGÜMANLARI (TRAINING ARGS) ────────────────────────────────
