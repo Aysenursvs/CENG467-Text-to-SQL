@@ -1,17 +1,6 @@
 """
-evaluate.py — Baseline evaluation pipeline for Text-to-SQL.
-
-This script evaluates two baseline prompting strategies on the Spider
-validation set using the Mistral API:
-  - Baseline 1: Zero-shot prompting
-  - Baseline 2: Few-shot prompting (3-shot)
-
-Metrics: Exact Match (EM)
-
-Usage:
-    python src/evaluate.py --num_samples 50 --schema_format format_a
-    python src/evaluate.py --num_samples 100 --schema_format format_b
-    python src/evaluate.py --num_samples 50 --schema_format format_b --delay 4.0
+evaluate_baseline.py — Baseline evaluation pipeline for Text-to-SQL.
+Güncelleme: Execution Accuracy (EX) metriği eklendi!
 """
 
 import os
@@ -19,6 +8,7 @@ import sys
 import json
 import time
 import argparse
+import sqlite3
 from datetime import datetime
 
 from datasets import load_dataset
@@ -37,6 +27,26 @@ from utils import (
     print_results_table,
 )
 
+# --- AYARLAR ---
+DB_DIR = "data/database"
+
+def execute_sql(db_id, sql_query):
+    """Verilen SQL sorgusunu SQLite veritabanında çalıştırır."""
+    db_path = os.path.join(DB_DIR, db_id, f"{db_id}.sqlite")
+    
+    if not os.path.exists(db_path):
+        return "DB_NOT_FOUND"
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute(sql_query)
+        result = cursor.fetchall()
+        conn.close()
+        return set(result) 
+    except Exception as e:
+        return f"SQL_HATA: {e}"
+
 
 def evaluate_baseline(
     dataset,
@@ -47,29 +57,14 @@ def evaluate_baseline(
     num_samples,
     delay_between_requests=1.5,
 ):
-    """
-    Bir baseline stratejisini Spider validation set üzerinde değerlendirir.
-
-    Args:
-        dataset: HuggingFace dataset nesnesi
-        client: Mistral istemci nesnesi
-        model_name (str): Mistral model adı
-        baseline_type (str): "zero_shot" veya "few_shot"
-        schema_format (str): "format_a", "format_b", "format_c"
-        num_samples (int): Değerlendirilecek örnek sayısı
-        delay_between_requests (float): API istekleri arası bekleme süresi (saniye)
-
-    Returns:
-        dict: Evaluation sonuçları
-    """
     serializer = SCHEMA_SERIALIZERS[schema_format]
     val_data = dataset["validation"]
 
-    # Değerlendirilecek örnek sayısını sınırla
     eval_samples = min(num_samples, len(val_data))
 
-    correct = 0
-    total = 0
+    em_correct = 0
+    exec_correct = 0
+    exec_total = 0
     predictions = []
     errors = []
 
@@ -84,11 +79,9 @@ def evaluate_baseline(
         db_id = sample["db_id"]
         target_sql = sample["query"]
 
-        # Schema bilgisini çıkar ve serileştir
         schema_info = extract_schema_from_sample(sample)
         schema_text = serializer(schema_info)
 
-        # Prompt oluştur
         if baseline_type == "zero_shot":
             prompt = create_zero_shot_prompt(question, db_id, schema_text)
         elif baseline_type == "few_shot":
@@ -97,15 +90,23 @@ def evaluate_baseline(
         else:
             raise ValueError(f"Unknown baseline type: {baseline_type}")
 
-        # Model çıktısını al
         prediction = get_sql_prediction(client, prompt, model_name=model_name)
 
-        # Exact match hesapla
+        # 1. Exact Match (Birebir Eşleşme)
         em = calculate_exact_match(prediction, target_sql)
-        correct += em
-        total += 1
+        em_correct += em
 
-        # Sonucu kaydet
+        # 2. Execution Accuracy (Çalıştırma Doğruluğu)
+        gold_result = execute_sql(db_id, target_sql)
+        pred_result = execute_sql(db_id, prediction)
+        
+        ex_match = 0
+        if "HATA" not in str(gold_result) and "HATA" not in str(pred_result) and gold_result != "DB_NOT_FOUND" and pred_result != "DB_NOT_FOUND":
+            exec_total += 1
+            if gold_result == pred_result:
+                exec_correct += 1
+                ex_match = 1
+
         pred_record = {
             "index": i,
             "db_id": db_id,
@@ -113,61 +114,59 @@ def evaluate_baseline(
             "target_sql": target_sql,
             "predicted_sql": prediction,
             "exact_match": em,
+            "exec_match": ex_match
         }
         predictions.append(pred_record)
 
-        if em == 0:
+        if em == 0 or ex_match == 0:
             errors.append(pred_record)
 
-        # İlerleme göstergesi
-        em_cumulative = (correct / total) * 100
-        status = "✅" if em == 1 else "❌"
-        print(f"  [{i+1:3d}/{eval_samples}] {status} Acc={em_cumulative:.1f}% ({correct}/{total}) | {question[:60]}...")
+        em_cumulative = (em_correct / (i+1)) * 100
+        ex_cumulative = (exec_correct / exec_total) * 100 if exec_total > 0 else 0
+        
+        status = "✅" if ex_match == 1 else "❌"
+        print(f"  [{i+1:3d}/{eval_samples}] {status} EM={em_cumulative:.1f}% | EX={ex_cumulative:.1f}% | DB: {db_id}")
 
-        # API rate limit: istekler arası bekleme
         if i < eval_samples - 1:
             time.sleep(delay_between_requests)
 
-    em_score = (correct / total) * 100 if total > 0 else 0
+    em_score = (em_correct / eval_samples) * 100 if eval_samples > 0 else 0
+    ex_score = (exec_correct / exec_total) * 100 if exec_total > 0 else 0
 
     print(f"\n--- SONUÇ: {baseline_type.upper()} ({schema_format}) ---")
-    print(f"  Exact Match: {correct}/{total} = {em_score:.1f}%")
+    print(f"  Exact Match: {em_correct}/{eval_samples} = {em_score:.2f}%")
+    print(f"  Execution Accuracy: {exec_correct}/{exec_total} = {ex_score:.2f}%")
 
     return {
         "baseline_type": baseline_type,
         "schema_format": schema_format,
         "model_name": model_name,
-        "num_samples": total,
-        "correct": correct,
+        "num_samples": eval_samples,
+        "em_correct": em_correct,
+        "exec_correct": exec_correct,
+        "exec_total": exec_total,
         "em_score": em_score,
+        "ex_score": ex_score,
         "predictions": predictions,
-        "error_examples": errors[:10],  # İlk 10 hata örneği
+        "error_examples": errors[:10],
         "timestamp": datetime.now().isoformat(),
     }
 
 
 def run_full_evaluation(args):
-    """
-    Tüm baseline deneyleri çalıştırır ve sonuçları kaydeder.
-    """
     print("=" * 60)
-    print("SPIDER VALIDATION SET — BASELINE EVALUATION")
+    print("SPIDER VALIDATION SET — BASELINE EVALUATION (WITH EXECUTION)")
     print("=" * 60)
 
-    # Verisetini yükle
     print("\nSpider veriseti yükleniyor...")
     dataset = load_dataset("xlangai/spider")
-    print(f"  Train: {len(dataset['train'])} | Validation: {len(dataset['validation'])}")
-
-    # Mistral istemcisini hazırla
-    print(f"\nMistral model ayarlandı: {args.model}...")
+    
+    print(f"\nMistral API ayarlandı: {args.model}...")
     client = get_mistral_client()
 
-    # Sonuçlar
     all_results = {}
     summary = {}
 
-    # ─── Baseline 1: Zero-shot ───────────────────────────────────────────
     print("\n\n" + "#" * 60)
     print("# BASELINE 1: ZERO-SHOT PROMPTING")
     print("#" * 60)
@@ -178,11 +177,10 @@ def run_full_evaluation(args):
     )
     all_results["zero_shot"] = zs_results
     summary["Zero-shot Prompting"] = {
-        "correct": zs_results["correct"],
-        "total": zs_results["num_samples"],
+        "em_score": zs_results["em_score"],
+        "ex_score": zs_results["ex_score"],
     }
 
-    # ─── Baseline 2: Few-shot ────────────────────────────────────────────
     print("\n\n" + "#" * 60)
     print("# BASELINE 2: FEW-SHOT PROMPTING (3-shot)")
     print("#" * 60)
@@ -193,21 +191,16 @@ def run_full_evaluation(args):
     )
     all_results["few_shot"] = fs_results
     summary["Few-shot Prompting (3-shot)"] = {
-        "correct": fs_results["correct"],
-        "total": fs_results["num_samples"],
+        "em_score": fs_results["em_score"],
+        "ex_score": fs_results["ex_score"],
     }
 
-    # ─── Sonuç tablosu ──────────────────────────────────────────────────
-    print_results_table(summary)
-
-    # ─── Sonuçları kaydet ────────────────────────────────────────────────
     results_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results"
     )
     os.makedirs(results_dir, exist_ok=True)
 
-    # Detaylı sonuçlar
-    results_path = os.path.join(results_dir, "baseline_results.json")
+    results_path = os.path.join(results_dir, "baseline_results_with_exec.json")
     save_data = {
         "experiment_config": {
             "model": args.model,
@@ -218,55 +211,37 @@ def run_full_evaluation(args):
         "results": {
             "zero_shot": {
                 "em_score": zs_results["em_score"],
-                "correct": zs_results["correct"],
-                "total": zs_results["num_samples"],
+                "ex_score": zs_results["ex_score"],
+                "exec_correct": zs_results["exec_correct"],
+                "exec_total": zs_results["exec_total"],
             },
             "few_shot": {
                 "em_score": fs_results["em_score"],
-                "correct": fs_results["correct"],
-                "total": fs_results["num_samples"],
+                "ex_score": fs_results["ex_score"],
+                "exec_correct": fs_results["exec_correct"],
+                "exec_total": fs_results["exec_total"],
             },
-        },
-        "zero_shot_predictions": zs_results["predictions"],
-        "few_shot_predictions": fs_results["predictions"],
-        "zero_shot_errors": zs_results["error_examples"],
-        "few_shot_errors": fs_results["error_examples"],
+        }
     }
 
     with open(results_path, "w", encoding="utf-8") as f:
         json.dump(save_data, f, indent=2, ensure_ascii=False)
-    print(f"\nDetaylı sonuçlar kaydedildi: {results_path}")
-
-    # Özet sonuçlar (rapor için)
-    summary_path = os.path.join(results_dir, "summary.json")
-    with open(summary_path, "w", encoding="utf-8") as f:
-        json.dump(save_data["results"], f, indent=2)
-    print(f"Özet sonuçlar kaydedildi: {summary_path}")
-
-    return all_results
+    
+    print("\n" + "=" * 60)
+    print("🏆 FİNAL BASELINE RAPORU")
+    print("=" * 60)
+    print(f"Zero-Shot -> EM: %{zs_results['em_score']:.2f} | EX: %{zs_results['ex_score']:.2f}")
+    print(f"Few-Shot  -> EM: %{fs_results['em_score']:.2f} | EX: %{fs_results['ex_score']:.2f}")
+    print("=" * 60)
+    print(f"Detaylı sonuçlar kaydedildi: {results_path}")
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Text-to-SQL Baseline Evaluation on Spider"
-    )
-    parser.add_argument(
-        "--num_samples", type=int, default=50,
-        help="Değerlendirilecek örnek sayısı (default: 50)"
-    )
-    parser.add_argument(
-        "--schema_format", type=str, default="format_a",
-        choices=["format_a", "format_b", "format_c"],
-        help="Şema serileştirme formatı (default: format_a)"
-    )
-    parser.add_argument(
-        "--model", type=str, default="mistral-small-latest",
-        help="Mistral model adı (default: mistral-small-latest)"
-    )
-    parser.add_argument(
-        "--delay", type=float, default=1.5,
-        help="API istekleri arası bekleme süresi - saniye (default: 1.5)"
-    )
+    parser = argparse.ArgumentParser(description="Text-to-SQL Baseline Evaluation on Spider")
+    parser.add_argument("--num_samples", type=int, default=100, help="Değerlendirilecek örnek sayısı")
+    parser.add_argument("--schema_format", type=str, default="format_b", choices=["format_a", "format_b", "format_c"])
+    parser.add_argument("--model", type=str, default="mistral-small-latest")
+    parser.add_argument("--delay", type=float, default=1.5)
 
     args = parser.parse_args()
     run_full_evaluation(args)
