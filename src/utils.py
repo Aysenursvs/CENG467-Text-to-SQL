@@ -108,8 +108,14 @@ def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
         column_names = db["column_names_original"]
         primary_keys_idx = db.get("primary_keys", [])
         foreign_keys_idx = db.get("foreign_keys", [])
+        column_types = db.get("column_types", [])
 
-        tables_list = [{"name": t, "columns": []} for t in table_names]
+
+        col_type = column_types[idx] if idx < len(column_types) else "text"
+        tables_list[tbl_idx]["columns"].append({
+            "name": col_name,
+            "type": col_type
+        })
         col_full_names = {}
 
         for idx, (tbl_idx, col_name) in enumerate(column_names):
@@ -205,11 +211,13 @@ def serialize_schema_format_b(schema_info):
     for table in schema_info["tables"]:
         col_defs = []
         for col in table["columns"]:
-            full_name = f"{table['name']}.{col}"
+            col_name = col["name"]
+            col_type = col["type"]
+            full_name = f"{table['name']}.{col_name}"
             if full_name in pk_set:
-                col_defs.append(f"  {col} PRIMARY KEY")
+                col_defs.append(f"  {col_name} {col_type} PRIMARY KEY")
             else:
-                col_defs.append(f"  {col}")
+                col_defs.append(f"  {col_name} {col_type}")
 
         cols_str = ",\n".join(col_defs) if col_defs else "  -- no columns"
         lines.append(f"CREATE TABLE {table['name']} (\n{cols_str}\n);")
