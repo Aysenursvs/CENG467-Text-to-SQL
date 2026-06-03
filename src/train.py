@@ -24,7 +24,7 @@ from trl import SFTConfig, SFTTrainer
 # Modeli değiştirmek isterseniz burayı güncelleyebilirsiniz (Örn: meta-llama/Meta-Llama-3-8B)
 MODEL_NAME = "mistralai/Mistral-7B-v0.1" 
 DATASET_PATH = "data/train_formatted.jsonl"
-OUTPUT_DIR = "models/sql-mistral-lora"
+OUTPUT_DIR = "/content/drive/MyDrive/sql-mistral-lora"
 
 def formatting_prompts_func(example):
     """
@@ -115,7 +115,7 @@ def main():
         eval_strategy="steps",
         eval_steps=50,
         save_strategy="steps",
-        save_steps=50,
+        save_steps=25,
         max_length=1024,
     )
 
