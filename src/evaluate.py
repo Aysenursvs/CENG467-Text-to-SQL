@@ -115,6 +115,11 @@ def main():
         if ";" in generated_sql:
             generated_sql = generated_sql.split(";")[0].strip() + ";"
 
+        print(f"\nQuestion: {question}")
+        print(f"Target SQL: {target_sql}")
+        print(f"Predicted SQL: {generated_sql}")
+        print("-" * 60)
+
         em = 1 if normalize_sql(generated_sql) == normalize_sql(target_sql) else 0
         exact_matches += em
 
