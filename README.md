@@ -224,8 +224,8 @@ Three formats are implemented in `utils.py` for schema encoding experiments:
 ---
 
 ## Team
-- Ayşenur S.
-- Mustafa
+- Ayşenur Sivaslıgil
+- Mustafa Erkoca
 
 ## License
 This project is for educational purposes as part of CENG 467 coursework at IYTE.
