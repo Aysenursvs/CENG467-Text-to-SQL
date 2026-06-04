@@ -1,6 +1,6 @@
 """
-evaluate_baseline.py — Baseline evaluation pipeline for Text-to-SQL.
-Güncelleme: Execution Accuracy (EX) + Precision, Recall, F1 Metrikleri Eklendi!
+evaluate_baseline.py - Baseline evaluation pipeline for Text-to-SQL.
+Update: adds Execution Accuracy (EX) and Precision/Recall/F1 metrics.
 """
 
 import os
@@ -27,11 +27,11 @@ from utils import (
     print_results_table,
 )
 
-# --- AYARLAR ---
+# --- SETTINGS ---
 DB_DIR = "data/database"
 
 def execute_sql(db_id, sql_query):
-    """Verilen SQL sorgusunu SQLite veritabanında çalıştırır."""
+    """Execute a SQL query against the SQLite database for the given db_id."""
     db_path = os.path.join(DB_DIR, db_id, f"{db_id}.sqlite")
     
     if not os.path.exists(db_path):
@@ -45,11 +45,11 @@ def execute_sql(db_id, sql_query):
         conn.close()
         return set(result) 
     except Exception as e:
-        return f"SQL_HATA: {e}"
+        return f"SQL_ERROR: {e}"
 
 def calculate_set_metrics(gold_set, pred_set):
-    """Hedef tablo ile modelin ürettiği tabloyu kesiştirerek IR metriklerini hesaplar."""
-    # Eğer sorgulardan biri hata verdiyse ve küme (set) dönmediyse skorlar 0'dır
+    """Compute IR metrics by comparing gold and predicted result sets."""
+    # If any query failed and did not return a set, scores are zero.
     if not isinstance(gold_set, set) or not isinstance(pred_set, set):
         return 0.0, 0.0, 0.0
     
@@ -57,7 +57,7 @@ def calculate_set_metrics(gold_set, pred_set):
     len_gold = len(gold_set)
     len_pred = len(pred_set)
 
-    # İki sorgu da boş sonuç döndürdüyse (örn: tabloda gerçekten o veri yoksa) bu bir başarıdır
+    # If both queries return empty results, treat it as a perfect match.
     if len_gold == 0 and len_pred == 0:
         return 1.0, 1.0, 1.0
     
@@ -86,7 +86,7 @@ def evaluate_baseline(
     exec_correct = 0
     exec_total = 0
     
-    # Yeni metrikler için toplam sayaçlar
+    # Aggregate totals for IR metrics.
     sum_precision = 0.0
     sum_recall = 0.0
     sum_f1 = 0.0
@@ -96,7 +96,7 @@ def evaluate_baseline(
 
     print(f"\n{'='*70}")
     print(f"Baseline: {baseline_type.upper()} | Schema: {schema_format}")
-    print(f"Örnekler: {eval_samples}")
+    print(f"Samples: {eval_samples}")
     print(f"{'='*70}")
 
     for i in range(eval_samples):
@@ -122,7 +122,7 @@ def evaluate_baseline(
         em = calculate_exact_match(prediction, target_sql)
         em_correct += em
 
-        # 2. Execution & Set Metrics
+        # 2. Execution and set-based metrics
         gold_result = execute_sql(db_id, target_sql)
         pred_result = execute_sql(db_id, prediction)
         
@@ -133,7 +133,7 @@ def evaluate_baseline(
         sum_recall += r
         sum_f1 += f1
         
-        if "HATA" not in str(gold_result) and "HATA" not in str(pred_result) and gold_result != "DB_NOT_FOUND" and pred_result != "DB_NOT_FOUND":
+        if "ERROR" not in str(gold_result) and "ERROR" not in str(pred_result) and gold_result != "DB_NOT_FOUND" and pred_result != "DB_NOT_FOUND":
             exec_total += 1
             if gold_result == pred_result:
                 exec_correct += 1
@@ -159,7 +159,7 @@ def evaluate_baseline(
         em_cumulative = (em_correct / (i+1)) * 100
         ex_cumulative = (exec_correct / exec_total) * 100 if exec_total > 0 else 0
         
-        status = "✅" if ex_match == 1 else "❌"
+        status = "OK" if ex_match == 1 else "FAIL"
         print(f"  [{i+1:3d}/{eval_samples}] {status} EM={em_cumulative:.1f}% | EX={ex_cumulative:.1f}% | F1={f1:.2f} | DB: {db_id}")
 
         if i < eval_samples - 1:
@@ -168,12 +168,12 @@ def evaluate_baseline(
     em_score = (em_correct / eval_samples) * 100 if eval_samples > 0 else 0
     ex_score = (exec_correct / exec_total) * 100 if exec_total > 0 else 0
     
-    # Ortalama IR Metrikleri
+    # Average IR metrics
     avg_precision = (sum_precision / eval_samples) * 100
     avg_recall = (sum_recall / eval_samples) * 100
     avg_f1 = (sum_f1 / eval_samples) * 100
 
-    print(f"\n--- SONUÇ: {baseline_type.upper()} ({schema_format}) ---")
+    print(f"\n--- RESULT: {baseline_type.upper()} ({schema_format}) ---")
     print(f"  Exact Match: {em_correct}/{eval_samples} = {em_score:.2f}%")
     print(f"  Execution Accuracy: {exec_correct}/{exec_total} = {ex_score:.2f}%")
     print(f"  Avg Precision: {avg_precision:.2f}%")
@@ -201,13 +201,13 @@ def evaluate_baseline(
 
 def run_full_evaluation(args):
     print("=" * 70)
-    print("SPIDER VALIDATION SET — BASELINE EVALUATION (WITH EXEC & F1 METRICS)")
+    print("SPIDER VALIDATION SET - BASELINE EVALUATION (WITH EXEC & F1 METRICS)")
     print("=" * 70)
 
-    print("\nSpider veriseti yükleniyor...")
+    print("\nLoading Spider dataset...")
     dataset = load_dataset("xlangai/spider")
     
-    print(f"\nMistral API ayarlandı: {args.model}...")
+    print(f"\nMistral API configured: {args.model}...")
     client = get_mistral_client()
 
     all_results = {}
@@ -233,6 +233,7 @@ def run_full_evaluation(args):
     )
     all_results["few_shot"] = fs_results
 
+    # Persist results under the repo-level results folder.
     results_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "results"
     )
@@ -268,17 +269,17 @@ def run_full_evaluation(args):
         json.dump(save_data, f, indent=2, ensure_ascii=False)
     
     print("\n" + "=" * 70)
-    print("🏆 FİNAL BASELINE RAPORU (ZENGİNLEŞTİRİLMİŞ METRİKLER)")
+    print("FINAL BASELINE REPORT (ENRICHED METRICS)")
     print("=" * 70)
     print(f"ZERO-SHOT -> EM: %{zs_results['em_score']:.2f} | EX: %{zs_results['ex_score']:.2f} | P: %{zs_results['avg_precision']:.2f} | R: %{zs_results['avg_recall']:.2f} | F1: %{zs_results['avg_f1']:.2f}")
     print(f"FEW-SHOT  -> EM: %{fs_results['em_score']:.2f} | EX: %{fs_results['ex_score']:.2f} | P: %{fs_results['avg_precision']:.2f} | R: %{fs_results['avg_recall']:.2f} | F1: %{fs_results['avg_f1']:.2f}")
     print("=" * 70)
-    print(f"Detaylı sonuçlar JSON formatında kaydedildi: {results_path}")
+    print(f"Detailed results saved as JSON: {results_path}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Text-to-SQL Baseline Evaluation on Spider")
-    parser.add_argument("--num_samples", type=int, default=100, help="Değerlendirilecek örnek sayısı")
+    parser.add_argument("--num_samples", type=int, default=100, help="Number of samples to evaluate")
     parser.add_argument("--schema_format", type=str, default="format_b", choices=["format_a", "format_b", "format_c"])
     parser.add_argument("--model", type=str, default="mistral-small-latest")
     parser.add_argument("--delay", type=float, default=1.5)
