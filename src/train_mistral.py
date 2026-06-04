@@ -1,12 +1,12 @@
 """
-train.py — Text-to-SQL modeli için Instruction Tuning (LoRA/PEFT) eğitim scripti.
+train_mistral.py - Instruction tuning (LoRA/PEFT) training script for Text-to-SQL.
 
-Bu script:
-  1. Hazırlanan JSONL veri setini yükler.
-  2. Açık kaynaklı bir LLM'i 4-bit (bellek tasarrufu için) yükler.
-  3. LoRA (Low-Rank Adaptation) adaptörlerini yapılandırır.
-  4. SFTTrainer (Supervised Fine-Tuning) ile modeli eğitir.
-  5. Eğitilen adaptör ağırlıklarını 'models/' klasörüne kaydeder.
+This script:
+    1. Loads the prepared JSONL dataset.
+    2. Loads an open-source LLM in 4-bit mode to save memory.
+    3. Configures LoRA (Low-Rank Adaptation) adapters.
+    4. Trains the model with SFTTrainer (supervised fine-tuning).
+    5. Saves the trained adapter weights to the output folder.
 """
 
 import os
@@ -20,15 +20,15 @@ from transformers import (
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from trl import SFTConfig, SFTTrainer
 
-# ─── 1. AYARLAR VE YAPILANDIRMA ──────────────────────────────────────────────
-# Modeli değiştirmek isterseniz burayı güncelleyebilirsiniz (Örn: meta-llama/Meta-Llama-3-8B)
+# --- 1. SETTINGS AND CONFIGURATION ---
+# Update this if you want to train a different base model.
 MODEL_NAME = "mistralai/Mistral-7B-v0.1" 
 DATASET_PATH = "data/train_formatted.jsonl"
 OUTPUT_DIR = "/content/drive/MyDrive/sql-mistral-lora"
 
 def formatting_prompts_func(example):
     """
-    Alpaca formatındaki veriyi modelin eğitim sırasında okuyacağı tekil bir metne çevirir.
+    Convert Alpaca-style fields into a single training text sequence.
     """
     def format_one(instruction, input_text, output_text):
         return (
@@ -49,24 +49,26 @@ def formatting_prompts_func(example):
 
 def main():
     print("=" * 60)
-    print("🚀 Text-to-SQL Model Eğitimi (Instruction Tuning) Başlıyor!")
+    print("Text-to-SQL Model Training (Instruction Tuning) Starting")
     print("=" * 60)
 
-    # ─── 2. VERİ SETİNİ YÜKLEME ───────────────────────────────────────────────
-    print(f"\n[1/5] Eğitim verisi yükleniyor: {DATASET_PATH}")
+    # --- 2. DATASET LOADING ---
+    print(f"\n[1/5] Loading training data: {DATASET_PATH}")
     dataset = load_dataset("json", data_files={"train": DATASET_PATH})
+    # Keep a small eval split for monitoring training quality.
     split_dataset = dataset["train"].train_test_split(test_size=0.05, seed=42)
     train_dataset = split_dataset["train"]
     eval_dataset = split_dataset["test"]
     print(f"  Train examples: {len(train_dataset)} | Eval examples: {len(eval_dataset)}")
 
-    # ─── 3. MODEL VE TOKENIZER YÜKLEME (4-BIT QUANTIZATION) ───────────────────
-    print(f"\n[2/5] Tokenizer ve Model ({MODEL_NAME}) 4-bit olarak yükleniyor...")
+    # --- 3. MODEL AND TOKENIZER LOADING (4-BIT QUANTIZATION) ---
+    print(f"\n[2/5] Loading tokenizer and model ({MODEL_NAME}) in 4-bit...")
     
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
-    tokenizer.pad_token = tokenizer.eos_token # Padding için eos_token kullanıyoruz
+    # Use EOS token for padding to avoid adding a new token.
+    tokenizer.pad_token = tokenizer.eos_token
 
-    # Modeli ekran kartına (GPU) sığdırmak için 4-bit sıkıştırma (Quantization) ayarı
+    # Quantization settings to fit the model into GPU memory.
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_use_double_quant=True,
@@ -77,17 +79,17 @@ def main():
     model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         quantization_config=bnb_config,
-        device_map="auto", # Modeli otomatik olarak müsait GPU'ya yay
+        device_map="auto",  # Automatically place layers on available GPUs.
         torch_dtype=torch.float16,
         trust_remote_code=True
     )
     
-    # Modeli eğitim için hazırlar
+    # Prepare model for k-bit training.
     model = prepare_model_for_kbit_training(model)
 
-    # ─── 4. LORA (PEFT) YAPILANDIRMASI ────────────────────────────────────────
-    print("\n[3/5] LoRA (Low-Rank Adaptation) adaptörleri kuruluyor...")
-    # Sadece belirli katmanları eğiterek devasa bellek (RAM/VRAM) tasarrufu sağlıyoruz
+    # --- 4. LORA (PEFT) CONFIGURATION ---
+    print("\n[3/5] Setting up LoRA (Low-Rank Adaptation) adapters...")
+    # Train only selected projection layers to reduce memory usage.
     peft_config = LoraConfig(
         lora_alpha=16,
         lora_dropout=0.1,
@@ -100,18 +102,18 @@ def main():
         ] 
     )
 
-    # ─── 5. EĞİTİM ARGÜMANLARI (TRAINING ARGS) ────────────────────────────────
-    print("\n[4/5] Eğitim parametreleri ayarlanıyor...")
+    # --- 5. TRAINING ARGUMENTS ---
+    print("\n[4/5] Configuring training parameters...")
     training_args = SFTConfig(
         output_dir=OUTPUT_DIR,
-        per_device_train_batch_size=4,       # GPU belleğine göre düşürülebilir (2 veya 1)
-        gradient_accumulation_steps=4,       # Sanal batch size oluşturur (4x4=16)
-        learning_rate=2e-4,                  # Öğrenme hızı
-        logging_steps=10,                    # Her 10 adımda bir log bas
-        num_train_epochs=2,                  # Full epoch-based training
+        per_device_train_batch_size=4,       # Reduce if GPU memory is limited.
+        gradient_accumulation_steps=4,       # Virtual batch size (4 x 4 = 16).
+        learning_rate=2e-4,                  # Learning rate.
+        logging_steps=10,                    # Log every N steps.
+        num_train_epochs=2,                  # Full epoch-based training.
         optim="paged_adamw_8bit",
         fp16=False,
-        bf16=False,                          # Hızlı eğitim için
+        bf16=False,
         eval_strategy="steps",
         eval_steps=50,
         save_strategy="steps",
@@ -119,8 +121,8 @@ def main():
         max_length=1024,
     )
 
-    # ─── 6. SFT TRAINER İLE EĞİTİMİ BAŞLATMA ──────────────────────────────────
-    print("\n[5/5] SFTTrainer başlatılıyor...")
+    # --- 6. START TRAINING WITH SFTTRAINER ---
+    print("\n[5/5] Initializing SFTTrainer...")
     trainer = SFTTrainer(
         model=model,
         train_dataset=train_dataset,
@@ -131,14 +133,15 @@ def main():
         formatting_func=formatting_prompts_func,
     )
 
-    print("\n🔥 Eğitim başlatılıyor! (Bu işlem donanıma göre saatler sürebilir)...\n")
+    print("\nTraining started (may take hours depending on hardware)...\n")
+    # Set resume_from_checkpoint to a valid path if you want to resume.
     trainer.train(resume_from_checkpoint="/content/drive/MyDrive/sql-mistral-lora/checkpoint-75")
 
-    # ─── 7. MODELİ KAYDETME ───────────────────────────────────────────────────
-    print(f"\n✅ Eğitim tamamlandı! Adaptörler '{OUTPUT_DIR}' klasörüne kaydediliyor...")
+    # --- 7. SAVE ADAPTERS ---
+    print(f"\nTraining complete. Saving adapters to '{OUTPUT_DIR}'...")
     trainer.model.save_pretrained(OUTPUT_DIR)
     tokenizer.save_pretrained(OUTPUT_DIR)
-    print("🚀 Her şey hazır. Model test edilmeyi bekliyor!")
+    print("All set. The model is ready for evaluation.")
 
 if __name__ == "__main__":
     main()

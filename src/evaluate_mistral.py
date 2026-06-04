@@ -1,5 +1,15 @@
 """
-evaluate.py — Eğitilmiş Text-to-SQL modelini lokalde test etme scripti.
+evaluate_mistral.py
+
+Evaluate a fine-tuned Mistral Text-to-SQL model on the Spider validation
+dataset using:
+
+- Exact Match (EM)
+- Execution Accuracy (EX)
+
+The script loads a LoRA-adapted Mistral model, generates SQL queries
+for Spider validation questions, executes both predicted and ground-truth
+queries, and reports evaluation metrics.
 """
 
 import os
@@ -12,13 +22,16 @@ from datasets import load_dataset
 
 from utils import extract_schema_from_sample, serialize_schema_format_b, normalize_sql
 
-# --- AYARLAR ---
+# --- CONFIGURATION ---
 BASE_MODEL = "mistralai/Mistral-7B-v0.1"
 LORA_MODEL_DIR = "/content/drive/MyDrive/sql-mistral-lora/checkpoint-175"
 DB_DIR = "data/database"
 
 
 def build_prompt(db_id, schema_text, question):
+    """
+    Construct the instruction prompt used for SQL generation.
+    """
     return (
         "### Instruction:\n"
         "You are an expert SQL developer. Your task is to translate the given natural language question into a valid executable SQL query.\n\n"
@@ -28,7 +41,13 @@ def build_prompt(db_id, schema_text, question):
     )
 
 def execute_sql(db_id, sql_query):
-    """Verilen SQL sorgusunu veritabanında çalıştırır."""
+    """
+    Execute a SQL query against the SQLite database associated with db_id.
+
+    Returns:
+        set: Query results as a set of tuples.
+        str: Error message if execution fails.
+    """
     db_path = os.path.join(DB_DIR, db_id, f"{db_id}.sqlite")
     
     if not os.path.exists(db_path):
@@ -42,7 +61,7 @@ def execute_sql(db_id, sql_query):
         conn.close()
         return set(result) 
     except Exception as e:
-        return f"SQL_HATA: {e}"
+        return f"SQL_ERROR: {e}"
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate fine-tuned Text-to-SQL model on Spider validation set")
@@ -52,10 +71,10 @@ def main():
     args = parser.parse_args()
 
     print("=" * 70)
-    print("🚀 Text-to-SQL Modeli Lokalde Ayağa Kaldırılıyor...")
+    print("Loading Text-to-SQL evaluation pipeline...")
     print("=" * 70)
 
-    # 4-Bit Sıkıştırma (Windows'ta ekran kartı belleğini aşmamak için kritik)
+    # 4-bit quantization to reduce GPU memory usage.
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_use_double_quant=True,
@@ -63,23 +82,23 @@ def main():
         bnb_4bit_compute_dtype=torch.float16
     )
 
-    print("[1/3] Tokenizer yükleniyor...")
+    print("[1/3] Loading tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
     tokenizer.pad_token = tokenizer.eos_token
 
-    print("[2/3] Temel model (Mistral-7B) 4-bit olarak yükleniyor...")
-    # device_map="auto" sayesinde VRAM yetmezse sistem RAM'inden destek alır
+    print("[2/3] Loading base model (Mistral-7B) in 4-bit...")
+    # Automatically distribute model layers across available devices.
     base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL,
         quantization_config=bnb_config,
         device_map="auto" 
     )
 
-    print("[3/3] Eğittiğin LoRA adaptörleri modele entegre ediliyor...")
+    print("[3/3] Loading fine-tuned LoRA adapters...")
     model = PeftModel.from_pretrained(base_model, LORA_MODEL_DIR)
     model.eval()
     
-    print("\n✅ Sistem Hazır! Spider validation değerlendiriliyor...\n")
+    print("\n✅ Model loaded successfully. Starting evaluation on Spider validation set...\n")
 
     dataset = load_dataset("xlangai/spider")
     val_data = dataset["validation"]
@@ -103,6 +122,7 @@ def main():
         prompt = build_prompt(db_id, schema_text, question)
         inputs = tokenizer(prompt, return_tensors="pt").to(device)
 
+        # Generate SQL query deterministically for evaluation.
         outputs = model.generate(
             **inputs,
             max_new_tokens=args.max_new_tokens,
@@ -111,6 +131,8 @@ def main():
             temperature=None,
         )
         generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+        # Extract the generated SQL from the model response.
         generated_sql = generated_text.split("### Response:")[-1].strip()
         if ";" in generated_sql:
             generated_sql = generated_sql.split(";")[0].strip() + ";"
@@ -125,7 +147,7 @@ def main():
 
         gold_result = execute_sql(db_id, target_sql)
         pred_result = execute_sql(db_id, generated_sql)
-        if "HATA" not in str(gold_result) and "HATA" not in str(pred_result) and gold_result != "DB_NOT_FOUND" and pred_result != "DB_NOT_FOUND":
+        if "SQL_ERROR" not in str(gold_result) and "SQL_ERROR" not in str(pred_result) and gold_result != "DB_NOT_FOUND" and pred_result != "DB_NOT_FOUND":
             exec_total += 1
             if gold_result == pred_result:
                 exec_matches += 1
