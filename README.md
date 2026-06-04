@@ -74,7 +74,7 @@ cd CENG467-Text-to-SQL
 pip install -r requirements.txt
 ```
 
-> **Note:** Fine-tuning scripts (`train_mistral.py`, `train_qwen.py`) require a CUDA-capable GPU with at least 4 GB VRAM. The Gradio demo and Qwen evaluation also require CUDA.
+> **Note:** Fine-tuning scripts (`train_mistral.py`, `train_qwen.py`) require a CUDA-capable GPU with at least 4 GB VRAM. The Gradio demo and Qwen evaluation also require CUDA. You can use [Google Colab](https://colab.research.google.com/) for free GPU access.
 
 ### 3. Configure API key (for Mistral API baselines only)
 Create a `.env` file in the project root:
