@@ -13,76 +13,22 @@ import os
 import re
 import time
 import json
-import zipfile
-from io import BytesIO
-import requests
+from datasets import table
 from dotenv import load_dotenv
 from openai import OpenAI
-import urllib.request
-import json
 
 # ─── Load environment variables ─────────────────────────────────────────────
 load_dotenv()
 
-
-
-# =============================================================================
-#  1. SCHEMA EXTRACTION — Orijinal tables.json'dan şema bilgisi çıkarma
-# =============================================================================
+# 1. SCHEMA EXTRACTION
 #
-# NOT: Artık SQL'leri regex ile parse etmek (tahmin etmek) yerine Spider'ın 
-# resmi tables.json dosyasını kullanıyoruz. Bu sayede Primary Key ve Foreign
-# Key ilişkilerini modele %100 doğru aktararak halüsinasyonları çözeceğiz.
+# Schema metadata is loaded directly from Spider's official tables.json file.
+# This ensures accurate primary-key and foreign-key relationships and avoids
+# schema reconstruction error.
 #
 
-# Global schema cache — bir kez oluşturulur, sonra tekrar kullanılır
+# Global schema cache built once and reused across evaluations.
 _SCHEMA_CACHE = {}
-
-
-# def _download_tables_json(tables_json_path):
-#     """
-#     Spider schema dosyasını indirmeyi dener.
-
-#     Önce doğrudan tables.json URL'lerini dener, sonra resmi Spider dataset
-#     zip arşivinden tables.json'u çıkarır.
-#     """
-#     candidate_urls = [
-#         os.environ.get("SPIDER_TABLES_JSON_URL"),
-#         "https://raw.githubusercontent.com/taoyds/spider/master/tables.json",
-#         "https://raw.githubusercontent.com/taoyds/spider/main/tables.json",
-#     ]
-
-#     for url in candidate_urls:
-#         if not url:
-#             continue
-#         try:
-#             response = requests.get(url, timeout=30)
-#             response.raise_for_status()
-#             with open(tables_json_path, "w", encoding="utf-8") as f:
-#                 f.write(response.text)
-#             return
-#         except Exception:
-#             continue
-
-#     spider_zip_url = "https://drive.google.com/uc?export=download&id=1403EGqzIDoHMdQF4c9Bkyl7dZLZ5Wt6J"
-#     response = requests.get(spider_zip_url, timeout=120, stream=True)
-#     response.raise_for_status()
-
-#     with zipfile.ZipFile(BytesIO(response.content)) as archive:
-#         tables_member = None
-#         for member_name in archive.namelist():
-#             if member_name.endswith("tables.json"):
-#                 tables_member = member_name
-#                 break
-
-#         if not tables_member:
-#             raise RuntimeError("Spider arşivi içinde tables.json bulunamadı.")
-
-#         with archive.open(tables_member) as source, open(tables_json_path, "wb") as target:
-#             target.write(source.read())
-
-
-import json
 
 def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
     global _SCHEMA_CACHE
@@ -90,15 +36,15 @@ def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
     if _SCHEMA_CACHE:
         return _SCHEMA_CACHE
 
-    # Dosyanın var olup olmadığını kontrol et
+   # Verify that tables.json exists.
     if not os.path.exists(tables_json_path):
         raise FileNotFoundError(
-            f"\n[KRITIK HATA] {tables_json_path} dosyasi bulunamadi!\n"
-            "Lütfen Spider dataset'inin icindeki orijinal 'tables.json' dosyasini "
-            "indirip projenin 'data/' klasorune manuel olarak kopyalayin."
+            f"\n[CRITICAL ERROR] {tables_json_path} was not found.\n"
+            "Please manually copy Spider's original tables.json file "
+            "into the project's data directory."
         )
 
-    # JSON dosyasını oku ve parse et
+    # Load and parse Spider schema metadata.
     with open(tables_json_path, "r", encoding="utf-8") as f:
         tables_data = json.load(f)
 
@@ -108,6 +54,7 @@ def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
         column_names = db["column_names_original"]
         primary_keys_idx = db.get("primary_keys", [])
         foreign_keys_idx = db.get("foreign_keys", [])
+        column_types = db.get("column_types", [])
 
         tables_list = [{"name": t, "columns": []} for t in table_names]
         col_full_names = {}
@@ -116,7 +63,11 @@ def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
             if tbl_idx == -1:
                 continue 
             table_name = table_names[tbl_idx]
-            tables_list[tbl_idx]["columns"].append(col_name)
+            col_type = column_types[idx] if idx < len(column_types) else "text"
+            tables_list[tbl_idx]["columns"].append({
+                "name": col_name,
+                "type": col_type,
+            })
             col_full_names[idx] = f"{table_name}.{col_name}"
 
         pk_list = [col_full_names[idx] for idx in primary_keys_idx if idx in col_full_names]
@@ -137,15 +88,20 @@ def build_schema_cache(dataset=None, tables_json_path="data/tables.json"):
 
 def extract_schema_from_sample(sample, dataset=None):
     """
-    Bir Spider örneğinin db_id'sine göre kusursuz şema bilgisini döndürür.
-    İlk çağrıda tables.json parse edilerek cache oluşturulur.
+    Retrieve schema information for a Spider sample using its db_id.
+
+    The schema cache is initialized on first use by parsing tables.json.
 
     Args:
-        sample: Spider verisetinden bir örnek
-        dataset: (Geriye dönük uyumluluk için bırakıldı)
+        sample: Spider dataset sample.
+        dataset: Kept for backward compatibility.
 
     Returns:
-        dict: {"db_id", "tables", "primary_keys", "foreign_keys"}
+        dict containing:
+            - db_id
+            - tables
+            - primary_keys
+            - foreign_keys
     """
     db_id = sample.get("db_id", "")
 
@@ -155,8 +111,7 @@ def extract_schema_from_sample(sample, dataset=None):
     if db_id in _SCHEMA_CACHE:
         return _SCHEMA_CACHE[db_id]
 
-    # Eğer db_id bir şekilde tables.json'da yoksa (ki Spider'da hepsi vardır)
-    # Hata fırlatmak yerine boş bir taslak döndür (kodu çökertmemek için)
+    # Return an empty schema if db_id cannot be found.
     return {
         "db_id": db_id,
         "tables": [],
@@ -165,16 +120,12 @@ def extract_schema_from_sample(sample, dataset=None):
     }
 
 
-# =============================================================================
-#  2. SCHEMA SERIALIZATION — 3 farklı format
-# =============================================================================
+
+#  2. SCHEMA SERIALIZATION — 3 different formats for experimentation (plain text, SQL-like, compact)
 
 def serialize_schema_format_a(schema_info):
     """
-    Format A — Plain text listing (okunabilir format).
-    Örnek:
-        Table: students | Columns: id, name, age, gpa
-        FK: enrollments.student_id -> students.id
+    Format A — Plain text listing.
     """
     lines = []
     for table in schema_info["tables"]:
@@ -193,11 +144,7 @@ def serialize_schema_format_a(schema_info):
 
 def serialize_schema_format_b(schema_info):
     """
-    Format B — CREATE TABLE syntax (SQL benzeri format).
-    Örnek:
-        CREATE TABLE students (
-          id PRIMARY KEY, name, age, gpa
-        );
+    Format B — SQL-style CREATE TABLE representation.
     """
     lines = []
     pk_set = set(schema_info.get("primary_keys", []))
@@ -205,11 +152,13 @@ def serialize_schema_format_b(schema_info):
     for table in schema_info["tables"]:
         col_defs = []
         for col in table["columns"]:
-            full_name = f"{table['name']}.{col}"
+            col_name = col["name"]
+            col_type = col["type"]
+            full_name = f"{table['name']}.{col_name}"
             if full_name in pk_set:
-                col_defs.append(f"  {col} PRIMARY KEY")
+                col_defs.append(f"  {col_name} {col_type} PRIMARY KEY")
             else:
-                col_defs.append(f"  {col}")
+                col_defs.append(f"  {col_name} {col_type}")
 
         cols_str = ",\n".join(col_defs) if col_defs else "  -- no columns"
         lines.append(f"CREATE TABLE {table['name']} (\n{cols_str}\n);")
@@ -227,26 +176,26 @@ def serialize_schema_format_b(schema_info):
 
 def serialize_schema_format_c(schema_info):
     """
-    Format C — Compact notation (kısa/token-efficient format).
-    Örnek:
-        students(id[PK], name, age, gpa) | courses(id[PK], title, credits)
+    Format C — Compact token-efficient schema representation.
     """
     pk_set = set(schema_info.get("primary_keys", []))
     parts = []
     for table in schema_info["tables"]:
         col_parts = []
         for col in table["columns"]:
-            full_name = f"{table['name']}.{col}"
+            col_name = col["name"]
+            full_name = f"{table['name']}.{col_name}"
+
             if full_name in pk_set:
-                col_parts.append(f"{col}[PK]")
+                col_parts.append(f"{col_name}[PK]")
             else:
-                col_parts.append(col)
-        cols_str = ", ".join(col_parts) if col_parts else ""
-        parts.append(f"{table['name']}({cols_str})")
+                col_parts.append(col_name)
+                cols_str = ", ".join(col_parts) if col_parts else ""
+                parts.append(f"{table['name']}({cols_str})")
 
     result = " | ".join(parts)
 
-    # FK bilgisi
+    # FK info
     fk_parts = []
     for fk, pk in schema_info.get("foreign_keys", []):
         fk_parts.append(f"{fk}->{pk}")
@@ -262,22 +211,20 @@ SCHEMA_SERIALIZERS = {
     "format_c": serialize_schema_format_c,
 }
 
+#  3. PROMPT BUILDERS
 
-# =============================================================================
-#  3. PROMPT BUILDERS — Zero-shot ve Few-shot
-# =============================================================================
 
 def create_zero_shot_prompt(question, db_id, schema_text):
     """
-    Zero-shot prompt oluşturur.
-
+    Create a zero-shot Text-to-SQL prompt.
     Args:
-        question (str): Doğal dil sorusu
-        db_id (str): Veritabanı adı
-        schema_text (str): Serileştirilmiş şema bilgisi
+    - question (str): The natural language question to be translated into SQL.
+    - db_id (str): The database identifier (used for context).
+    - schema_text (str): The serialized schema information to include in the prompt.
 
     Returns:
-        str: LLM'e gönderilecek prompt
+    - str: The complete prompt to be sent to the LLM.
+
     """
     prompt = f"""You are an expert SQL developer. Your task is to translate the given natural language question into a valid executable SQL query.
 
@@ -293,16 +240,16 @@ Important: Return ONLY the SQL query, nothing else. Do not include explanations,
 
 def create_few_shot_prompt(question, db_id, schema_text, examples):
     """
-    Few-shot prompt oluşturur (3-shot default).
+    Create a few-shot Text-to-SQL prompt (3-shot default).
 
     Args:
-        question (str): Doğal dil sorusu
-        db_id (str): Veritabanı adı
-        schema_text (str): Serileştirilmiş şema bilgisi
-        examples (list): [{question, sql}, ...] formatında örnekler
+        question (str): Natural language question
+        db_id (str): Database name
+        schema_text (str): Serialized schema information
+        examples (list): List of examples in [{question, sql}, ...] format
 
     Returns:
-        str: LLM'e gönderilecek prompt
+        str: Prompt to be sent to the LLM
     """
     examples_text = ""
     for i, ex in enumerate(examples, 1):
@@ -327,7 +274,7 @@ Important: Return ONLY the SQL query, nothing else. Do not include explanations,
     return prompt
 
 
-# Varsayılan few-shot örnekleri (Spider verisetinden seçilmiş basit örnekler)
+# Default fallback few-shot examples.
 DEFAULT_FEW_SHOT_EXAMPLES = [
     # 1. Simple aggregate with COUNT
     {
@@ -371,73 +318,68 @@ DEFAULT_FEW_SHOT_EXAMPLES = [
     },
 ]
 
-
-# =============================================================================
 #  4. SQL NORMALIZATION & EXACT MATCH
-# =============================================================================
+
 
 def normalize_sql(sql):
     """
-    SQL sorgusunu normalize eder: küçük harf, fazla boşluk temizleme,
-    noktalı virgül kaldırma, AS clause'ları kaldırma.
+    Normalize SQL queries for exact-match evaluation
 
     Args:
-        sql (str): Normalize edilecek SQL sorgusu
+        sql (str): Normalize sql query string
 
     Returns:
-        str: Normalize edilmiş SQL
+        str: Normalized SQL string
     """
     if not sql:
         return ""
     sql = sql.strip().lower()
     sql = sql.replace(";", "")
-    # Markdown code block temizliği
+    # Remove Markdown code block formatting. 
     sql = re.sub(r"^```(sql)?", "", sql)
     sql = re.sub(r"```$", "", sql)
     sql = sql.strip()
     
-    # AS clause'ları ve alias'ları kaldır
-    # Örneğin: "SELECT COUNT(*) AS total_singers" → "SELECT COUNT(*)"
+    # Remove aliases introduced using AS.
     sql = re.sub(r"\s+as\s+\w+", "", sql)
     
-    # Parantez İÇİndeki boşlukları kaldır (ama dış boşlukları koru)
+    # Normalize whitespace inside parentheses.
     sql = re.sub(r"\(\s+", "(", sql)  # "( " → "("
     sql = re.sub(r"\s+\)", ")", sql)  # " )" → ")"
     
-    # Virgül çevresindeki boşlukları normalize et
+    # Normalize whitespace around commas.
     sql = re.sub(r"\s*,\s*", ", ", sql)
     
-    # Fazla boşlukları tek boşluğa indir
+    # Normalize multiple whitespace characters into a single space.
     sql = re.sub(r"\s+", " ", sql)
     return sql
 
 
 def calculate_exact_match(prediction, target):
     """
-    Exact Match (EM) skoru hesaplar.
+    Compute Exact Match (EM) between predicted and target SQL queries.
 
     Args:
-        prediction (str): Model çıktısı SQL
-        target (str): Hedef (gold) SQL
+        prediction (str): Model output SQL
+        target (str): Target (gold) SQL
 
     Returns:
-        int: 1 eşleşiyorsa, 0 eşleşmiyorsa
+        int: 1 if they match, 0 otherwise
     """
     pred_norm = normalize_sql(prediction)
     target_norm = normalize_sql(target)
     return 1 if pred_norm == target_norm else 0
 
 
-# =============================================================================
+
 #  5. MISTRAL API WRAPPER
-# =============================================================================
 
 def get_mistral_client():
     """
-    Mistral API istemcisi oluşturur.
+    Creates a Mistral API client.
 
     Returns:
-        OpenAI: Mistral uyumlu OpenAI client
+        OpenAI: Mistral-compatible OpenAI client
     """
     api_key = os.environ.get("MISTRAL_API_KEY") or os.environ.get("MISTRALAI_API_KEY")
     base_url = os.environ.get("MISTRAL_BASE_URL", "https://api.mistral.ai/v1")
@@ -446,17 +388,19 @@ def get_mistral_client():
 
 def get_sql_prediction(client, prompt, model_name="mistral-small-latest", max_retries=3, retry_delay=2):
     """
-    Mistral API ile SQL tahmini alır. Rate limit hatalarında retry yapar.
+    Generate a SQL prediction using the Mistral API.
+
+    Automatically retries on transient API failures.
 
     Args:
-        client: Mistral uyumlu istemci nesnesi
-        prompt (str): LLM'e gönderilecek prompt
-            model_name (str): Kullanılacak Mistral model adı (varsayılan: mistral-small-latest)
-        max_retries (int): Maksimum deneme sayısı
-        retry_delay (int): Denemeler arası bekleme süresi (saniye)
+        client: Mistral-compatible OpenAI client object
+        prompt (str): Prompt to be sent to the LLM
+        model_name (str): Name of the Mistral model to use (default: mistral-small-latest)
+        max_retries (int): Maximum number of retry attempts
+        retry_delay (int): Delay between retry attempts (seconds)
 
     Returns:
-        str: Model çıktısı (SQL sorgusu)
+        str: Model output (SQL query)
     """
     for attempt in range(max_retries):
         try:
@@ -469,35 +413,32 @@ def get_sql_prediction(client, prompt, model_name="mistral-small-latest", max_re
                 max_tokens=256,
             )
             result = response.choices[0].message.content.strip()
-            # Markdown code block temizliği
+            # Remove any code block formatting if present.
             result = re.sub(r"^```(sql)?\n?", "", result)
             result = re.sub(r"\n?```$", "", result)
             return result.strip()
         except Exception as e:
             if attempt < max_retries - 1:
-                print(f"  [Retry {attempt+1}/{max_retries}] API hatası: {e}")
+                print(f"  [Retry {attempt+1}/{max_retries}] API error: {e}")
                 time.sleep(retry_delay * (attempt + 1))
             else:
                 return f"API_ERROR: {e}"
 
-
-# =============================================================================
 #  6. HELPER FUNCTIONS
-# =============================================================================
 
 def get_few_shot_examples_from_dataset(dataset, db_id, n=3, exclude_idx=None):
     """
-    Aynı veritabanından (db_id) few-shot örnekleri seçer.
-    Bulamazsa varsayılan örnekleri döndürür.
+    Select few-shot examples from the same database (db_id).
+    Returns default examples if not enough are found.
 
     Args:
-        dataset: Hugging Face dataset nesnesi
-        db_id (str): Veritabanı adı
-        n (int): Seçilecek örnek sayısı
-        exclude_idx (int): Hariç tutulacak örnek indeksi
+        dataset: Hugging Face dataset object
+        db_id (str): Database name
+        n (int): Number of examples to select
+        exclude_idx (int): Index of example to exclude
 
     Returns:
-        list: [{question, sql}, ...] formatında örnekler
+        list: [{question, sql}, ...] format examples
     """
     examples = []
     for i, sample in enumerate(dataset["train"]):
@@ -510,8 +451,7 @@ def get_few_shot_examples_from_dataset(dataset, db_id, n=3, exclude_idx=None):
             })
         if len(examples) >= n:
             break
-
-    # Yeterince örnek bulunamazsa varsayılanları kullan
+    
     if len(examples) < n:
         remaining = n - len(examples)
         examples.extend(DEFAULT_FEW_SHOT_EXAMPLES[:remaining])
@@ -521,7 +461,7 @@ def get_few_shot_examples_from_dataset(dataset, db_id, n=3, exclude_idx=None):
 
 def print_results_table(results):
     """
-    Sonuçları tablo formatında yazdırır.
+    Print results in a table format.
 
     Args:
         results (dict): {method_name: {em_score, total, correct, ...}}

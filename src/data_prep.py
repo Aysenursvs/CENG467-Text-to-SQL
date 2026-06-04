@@ -1,13 +1,13 @@
 """
-data_prep.py — Spider verisetini indirme, inceleme ve ön işleme scripti.
+data_prep.py - Spider dataset download, inspection, and preprocessing script.
 
-Bu script:
-  1. Spider verisetini Hugging Face'den indirir
-  2. Verisetinin yapısını ve boyutlarını ekrana basar
-  3. Şema bilgisini otomatik olarak çıkarır
-  4. 3 farklı şema serileştirme formatını gösterir
-  5. Zero-shot ve few-shot prompt örnekleri oluşturur
-    6. Mistral API bağlantısını test eder
+This script:
+    1. Downloads the Spider dataset from Hugging Face
+    2. Prints dataset structure and sizes
+    3. Extracts schema information automatically
+    4. Shows three schema serialization formats
+    5. Builds zero-shot and few-shot prompt examples
+    6. Tests the Mistral API connection
 """
 
 import os
@@ -16,7 +16,7 @@ import json
 
 from datasets import load_dataset
 
-# src/ klasöründeki utils modülünü import et
+# Import local utils from the src folder.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from utils import (
     extract_schema_from_sample,
@@ -34,26 +34,26 @@ from utils import (
 
 
 def main():
-    # ─── 1. Spider verisetini indir ──────────────────────────────────────────
+    # Step 1: download the Spider dataset.
     print("=" * 60)
-    print("ADIM 1: Spider Veriseti İndiriliyor / Yükleniyor...")
+    print("STEP 1: Downloading / Loading Spider Dataset...")
     print("=" * 60)
     dataset = load_dataset("xlangai/spider")
 
-    # ─── 2. Verisetinin boyutları ────────────────────────────────────────────
-    print("\n--- VERİSETİ BOYUTLARI ---")
-    print(f"  Eğitim (Train) seti   : {len(dataset['train'])} örnek")
-    print(f"  Doğrulama (Validation): {len(dataset['validation'])} örnek")
+    # Show dataset sizes.
+    print("\n--- DATASET SIZES ---")
+    print(f"  Train set      : {len(dataset['train'])} samples")
+    print(f"  Validation set : {len(dataset['validation'])} samples")
 
-    # ─── 3. İlk örneği incele ────────────────────────────────────────────────
+    # Inspect the first sample.
     sample = dataset["train"][0]
 
-    print("\n--- İLK ÖRNEK İNCELEMESİ ---")
-    print(f"  Veritabanı Adı (db_id) : {sample['db_id']}")
-    print(f"  Doğal Dil Sorusu       : {sample['question']}")
-    print(f"  Hedef SQL Sorgusu      : {sample['query']}")
+    print("\n--- FIRST SAMPLE INSPECTION ---")
+    print(f"  Database (db_id) : {sample['db_id']}")
+    print(f"  Question         : {sample['question']}")
+    print(f"  Target SQL       : {sample['query']}")
 
-    print("\n--- VERİ FORMATI (FEATURES) ---")
+    print("\n--- DATA FORMAT (FEATURES) ---")
     for key in sample.keys():
         val = sample[key]
         val_type = type(val).__name__
@@ -61,26 +61,26 @@ def main():
             val_type = f"list (len={len(val)})"
         print(f"  - {key}: {val_type}")
 
-    # ─── 4. Otomatik şema çıkarma ───────────────────────────────────────────
+    # Step 2: automatic schema extraction.
     print("\n" + "=" * 60)
-    print("ADIM 2: Otomatik Şema Çıkarma (Schema Extraction)")
+    print("STEP 2: Automatic Schema Extraction")
     print("=" * 60)
 
-    # Tüm veri setinden şema cache'i oluştur
-    print("  Schema cache oluşturuluyor (tüm SQL sorguları parse ediliyor)...")
+    # Build schema cache from the full dataset.
+    print("  Building schema cache (parsing all SQL queries)...")
     build_schema_cache(dataset)
     schema_info = extract_schema_from_sample(sample, dataset)
 
-    print(f"\n  Veritabanı: {schema_info['db_id']}")
-    print(f"  Tablo sayısı: {len(schema_info['tables'])}")
+    print(f"\n  Database: {schema_info['db_id']}")
+    print(f"  Table count: {len(schema_info['tables'])}")
     for table in schema_info["tables"]:
         print(f"    - {table['name']}: {table['columns']}")
     print(f"  Primary Keys: {schema_info['primary_keys']}")
     print(f"  Foreign Keys: {schema_info['foreign_keys']}")
 
-    # ─── 5. 3 farklı şema serileştirme formatı ──────────────────────────────
+    # Step 3: show three schema serialization formats.
     print("\n" + "=" * 60)
-    print("ADIM 3: Şema Serileştirme Formatları")
+    print("STEP 3: Schema Serialization Formats")
     print("=" * 60)
 
     print("\n--- FORMAT A (Plain Text Listing) ---")
@@ -95,9 +95,9 @@ def main():
     schema_c = serialize_schema_format_c(schema_info)
     print(schema_c)
 
-    # ─── 6. Prompt örnekleri ─────────────────────────────────────────────────
+    # Step 4: prompt examples for baseline usage.
     print("\n" + "=" * 60)
-    print("ADIM 4: Prompt Örnekleri")
+    print("STEP 4: Prompt Examples")
     print("=" * 60)
 
     question = sample["question"]
@@ -111,34 +111,34 @@ def main():
     fs_prompt = create_few_shot_prompt(
         question, db_id, schema_a, DEFAULT_FEW_SHOT_EXAMPLES
     )
-    print(fs_prompt[:500] + "...\n(kısaltıldı)")
+    print(fs_prompt[:500] + "...\n(truncated)")
 
-    # ─── 7. Mistral API testi ────────────────────────────────────────────────
+    # Step 5: Mistral API connectivity test.
     print("\n" + "=" * 60)
-    print("ADIM 5: Mistral API Bağlantı Testi")
+    print("STEP 5: Mistral API Connection Test")
     print("=" * 60)
 
     api_key = os.environ.get("MISTRAL_API_KEY") or os.environ.get("MISTRALAI_API_KEY")
     if not api_key:
-        print("  [UYARI] MISTRAL_API_KEY bulunamadı! .env dosyanı kontrol et.")
-        print("  API testini atlıyorum...")
+        print("  [WARNING] MISTRAL_API_KEY not found. Check your .env file.")
+        print("  Skipping API test...")
         return dataset
 
     client = get_mistral_client()
 
-    # Basit test
-    print("\n  Mistral API'ye test sorgusu gönderiliyor...")
+    # Simple API probe using a zero-shot prompt.
+    print("\n  Sending a test prompt to Mistral API...")
     test_prompt = create_zero_shot_prompt(question, db_id, schema_a)
     prediction = get_sql_prediction(client, test_prompt, model_name="mistral-small-latest")
     target_sql = sample["query"]
     em = calculate_exact_match(prediction, target_sql)
 
-    print(f"\n  Soru     : {question}")
-    print(f"  Hedef SQL: {target_sql}")
-    print(f"  Model SQL: {prediction}")
-    print(f"  Exact Match: {'✅ BAŞARILI' if em == 1 else '❌ BAŞARISIZ'}")
+    print(f"\n  Question : {question}")
+    print(f"  Target SQL: {target_sql}")
+    print(f"  Model SQL : {prediction}")
+    print(f"  Exact Match: {'SUCCESS' if em == 1 else 'FAIL'}")
 
-    # ─── 8. Veri seti istatistiklerini kaydet ────────────────────────────────
+    # Persist dataset statistics for reporting.
     data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
     os.makedirs(data_dir, exist_ok=True)
 
@@ -154,32 +154,32 @@ def main():
     stats_path = os.path.join(data_dir, "dataset_stats.json")
     with open(stats_path, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=2, ensure_ascii=False)
-    print(f"\n  Veri seti istatistikleri kaydedildi: {stats_path}")
+    print(f"\n  Dataset statistics saved: {stats_path}")
 
-    # Eğitim verisini JSONL olarak hazırla
+    # Prepare training data in JSONL format.
     create_instruction_dataset(dataset)
 
     return dataset
 
 def create_instruction_dataset(dataset, output_path="data/train_formatted.jsonl"):
     """
-    Spider eğitim verisini LLM fine-tuning işlemi için Alpaca formatında (JSONL) hazırlar.
+    Prepare Spider training data in Alpaca format (JSONL) for LLM fine-tuning.
     """
     print("\n" + "=" * 60)
-    print("ADIM 6: Eğitim Verisini Formatlama (Instruction Tuning için)")
+    print("Formatting Training Data (Instruction Tuning)")
     print("=" * 60)
     
     formatted_data = []
     
-    # Sadece train setini formatlıyoruz (Modelin cevapları ezberlememesi için)
-    print("  Eğitim örnekleri Alpaca formatına dönüştürülüyor...")
+    # Only format the train split to avoid leaking targets from validation.
+    print("  Converting training samples to Alpaca format...")
     for sample in dataset["train"]:
-        # utils.py'deki kusursuz şema çıkarıcıyı kullanıyoruz
+        # Use the shared schema extractor from utils.
         schema_info = extract_schema_from_sample(sample)
-        # LLM'lerin en iyi anladığı şema yapısı Format B (CREATE TABLE) olduğu için onu seçiyoruz
+        # Use the CREATE TABLE style schema for clarity.
         schema_text = serialize_schema_format_b(schema_info)
         
-        # Alpaca formatında JSON satırı oluşturuyoruz
+        # Build an Alpaca-style JSON line.
         formatted_line = {
             "instruction": "You are an expert SQL developer. Your task is to translate the given natural language question into a valid executable SQL query.",
             "input": f"Database: {sample['db_id']}\nSchema:\n{schema_text}\n\nQuestion: {sample['question']}",
@@ -187,13 +187,13 @@ def create_instruction_dataset(dataset, output_path="data/train_formatted.jsonl"
         }
         formatted_data.append(formatted_line)
     
-    # JSONL olarak dosyaya kaydet
+    # Write JSONL to disk.
     with open(output_path, "w", encoding="utf-8") as f:
         for item in formatted_data:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
             
-    print(f"  ✅ [Başarılı] Toplam {len(formatted_data)} eğitim örneği formatlandı.")
-    print(f"  📂 [Kaydedildi] Dosya yolu: {output_path}")
+    print(f"  [OK] Total formatted training samples: {len(formatted_data)}")
+    print(f"  [SAVED] Output path: {output_path}")
 
 
 if __name__ == "__main__":
