@@ -129,7 +129,7 @@ def serialize_schema_format_a(schema_info):
     """
     lines = []
     for table in schema_info["tables"]:
-        cols = ", ".join(table["columns"]) if table["columns"] else "(no columns)"
+        cols = ", ".join(col["name"] for col in table["columns"]) if table["columns"] else "(no columns)"
         lines.append(f"Table: {table['name']} | Columns: {cols}")
 
     if schema_info.get("primary_keys"):

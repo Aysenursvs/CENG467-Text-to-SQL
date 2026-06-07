@@ -135,7 +135,7 @@ def main():
 
     print("\nTraining started (may take hours depending on hardware)...\n")
     # Set resume_from_checkpoint to a valid path if you want to resume.
-    trainer.train(resume_from_checkpoint="/content/drive/MyDrive/sql-mistral-lora/checkpoint-75")
+    trainer.train(resume_from_checkpoint="/content/drive/MyDrive/sql-mistral-lora/checkpoint-175")
 
     # --- 7. SAVE ADAPTERS ---
     print(f"\nTraining complete. Saving adapters to '{OUTPUT_DIR}'...")

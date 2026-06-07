@@ -42,7 +42,7 @@ CENG467-Text-to-SQL/
 │   ├── tables.json             # Spider official schema metadata
 │   ├── train_formatted.jsonl   # Alpaca-format JSONL for fine-tuning (~10.5 MB) [not committed]
 │   └── dataset_stats.json      # Dataset statistics
-├── models_02.06.2026/          # Trained LoRA adapter weights     [not committed]
+├── models/                     # Trained LoRA adapter weights     [not committed]
 ├── results/                    # Evaluation output files          [not committed]
 ├── notebooks/
 │   ├── Dataset_Exploration.ipynb           # EDA on Spider dataset
